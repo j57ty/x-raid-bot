@@ -258,7 +258,7 @@ async function getTweetComments(tweetId) {
   if (config.TWITTERAPI_IO_KEY) {
     try {
       console.log(`[XService] Fetching replies via Third-Party API for tweet ${tweetId}...`);
-      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 10000, 'Third-party API');
+      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 30000, 'TwitterAPI.io');
       if (results && results.length > 0) return { comments: results };
     } catch (err) {
       console.warn(`[XService] Third-Party API failed: ${err.message}. Falling back.`);
