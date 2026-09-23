@@ -153,7 +153,8 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
         statusMsg.message_id,
         `⚠️ <b>No comments found on target post.</b>\n\n` +
         `Post: ${escapeHtml(parsed.cleanUrl)}\n` +
-        `Either the tweet has no replies yet, or replies are restricted.`
+        `Either the tweet has no replies yet, or replies are restricted.`,
+        { link_preview_options: { is_disabled: true } }
       );
       return;
     }
