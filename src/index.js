@@ -143,8 +143,22 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
   );
 
   try {
-    // 1. Fetch comments from X
-    const result = await getTweetComments(parsed.tweetId);
+    // 1. Fetch comments from X with live progress updates
+    const onProgress = async (count, page) => {
+      try {
+        await safeEditMessage(
+          ctx,
+          statusMsg.message_id,
+          `⏳ <b>Scanning X Post...</b>\n` +
+          `🎯 Post: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
+          `📥 Discovered <b>${count}</b> comments so far (scanning page ${page})...`
+        );
+      } catch (e) {
+        // Ignore progress reporting errors
+      }
+    };
+
+    const result = await getTweetComments(parsed.tweetId, onProgress);
     const comments = result.comments || [];
 
     if (!comments || comments.length === 0) {

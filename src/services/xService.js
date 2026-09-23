@@ -169,7 +169,7 @@ async function fetchRepliesViaGraphQL(tweetId) {
 /**
  * Strategy 3: Third-Party API (e.g., twitterapi.io) with multi-page cursor pagination.
  */
-async function fetchRepliesViaThirdParty(tweetId, maxPages = 3) {
+async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAGES, onProgress = null) {
   if (!config.TWITTERAPI_IO_KEY) {
     throw new Error('TWITTERAPI_IO_KEY not configured.');
   }
@@ -185,7 +185,7 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = 3) {
     }
 
     try {
-      console.log(`[TwitterAPI.io] Fetching replies page ${page} for tweet ${tweetId}...`);
+      console.log(`[TwitterAPI.io] Fetching replies page ${page}/${maxPages} for tweet ${tweetId}...`);
       const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
         params,
         headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
@@ -203,6 +203,15 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = 3) {
             text: tweet.text || '',
             url: rawUrl.replace('twitter.com', 'x.com')
           });
+        }
+      }
+
+      // Notify progress if callback provided
+      if (onProgress && typeof onProgress === 'function') {
+        try {
+          await onProgress(comments.length, page);
+        } catch (e) {
+          // ignore progress update errors
         }
       }
 
@@ -278,14 +287,19 @@ function withTimeout(promise, ms, operationName = 'Operation') {
  * Main export: Fetches replies of a given tweet ID using available methods.
  * 
  * @param {string} tweetId 
+ * @param {Function} [onProgress] - Optional callback (count, page)
  * @returns {Promise<{ comments: Array<Object>, warning?: string }>}
  */
-async function getTweetComments(tweetId) {
+async function getTweetComments(tweetId, onProgress = null) {
   // 1. Always prioritize live Third-Party API if key exists (Live real replies, no bans)
   if (config.TWITTERAPI_IO_KEY) {
     try {
       console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId}...`);
-      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 45000, 'TwitterAPI.io');
+      const results = await withTimeout(
+        fetchRepliesViaThirdParty(tweetId, config.MAX_SCAN_PAGES, onProgress),
+        120000,
+        'TwitterAPI.io'
+      );
       if (results && results.length > 0) {
         console.log(`[XService] Successfully retrieved ${results.length} real comments for tweet ${tweetId}`);
         return { comments: results };
