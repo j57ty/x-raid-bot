@@ -167,30 +167,54 @@ async function fetchRepliesViaGraphQL(tweetId) {
 }
 
 /**
- * Strategy 3: Third-Party API (e.g., twitterapi.io).
+ * Strategy 3: Third-Party API (e.g., twitterapi.io) with multi-page cursor pagination.
  */
-async function fetchRepliesViaThirdParty(tweetId) {
+async function fetchRepliesViaThirdParty(tweetId, maxPages = 4) {
   if (!config.TWITTERAPI_IO_KEY) {
     throw new Error('TWITTERAPI_IO_KEY not configured.');
   }
 
-  const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
-    params: { tweetId },
-    headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
-    timeout: 15000
-  });
-
   const comments = [];
-  const tweets = response.data?.tweets || response.data?.replies || [];
-  for (const tweet of tweets) {
-    if (tweet.id && String(tweet.id) !== String(tweetId)) {
-      const author = tweet.author?.userName || tweet.userName || 'user';
-      comments.push({
-        id: tweet.id,
-        author,
-        text: tweet.text || '',
-        url: `https://x.com/${author}/status/${tweet.id}`
-      });
+  let cursor = null;
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  for (let page = 1; page <= maxPages; page++) {
+    const params = { tweetId };
+    if (cursor) {
+      params.cursor = cursor;
+    }
+
+    console.log(`[TwitterAPI.io] Fetching replies page ${page} for tweet ${tweetId}...`);
+    const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
+      params,
+      headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+      timeout: 15000
+    });
+
+    const tweets = response.data?.tweets || response.data?.replies || [];
+    for (const tweet of tweets) {
+      if (tweet.id && String(tweet.id) !== String(tweetId)) {
+        const author = tweet.author?.userName || tweet.userName || 'user';
+        const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
+        comments.push({
+          id: tweet.id,
+          author,
+          text: tweet.text || '',
+          url: rawUrl.replace('twitter.com', 'x.com')
+        });
+      }
+    }
+
+    // Check if there is another page
+    if (!response.data?.has_next_page || !response.data?.next_cursor) {
+      break;
+    }
+
+    cursor = response.data.next_cursor;
+
+    // Respect TwitterAPI.io free-tier QPS limit (1 request every 5 seconds)
+    if (page < maxPages) {
+      await sleep(5200);
     }
   }
 
@@ -258,7 +282,7 @@ async function getTweetComments(tweetId) {
   if (config.TWITTERAPI_IO_KEY) {
     try {
       console.log(`[XService] Fetching replies via Third-Party API for tweet ${tweetId}...`);
-      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 30000, 'TwitterAPI.io');
+      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 50000, 'TwitterAPI.io');
       if (results && results.length > 0) return { comments: results };
     } catch (err) {
       console.warn(`[XService] Third-Party API failed: ${err.message}. Falling back.`);
