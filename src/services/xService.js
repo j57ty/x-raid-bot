@@ -226,56 +226,86 @@ function generateMockComments(tweetId, count = 25) {
 }
 
 /**
+ * Helper to wrap any promise with a strict timeout
+ */
+function withTimeout(promise, ms, operationName = 'Operation') {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${ms / 1000}s`));
+    }, ms);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Main export: Fetches replies of a given tweet ID using available methods.
  * 
  * @param {string} tweetId 
- * @returns {Promise<Array<Object>>} List of comment objects
+ * @returns {Promise<{ comments: Array<Object>, warning?: string }>}
  */
 async function getTweetComments(tweetId) {
   // If test mode is enabled, return simulated comments
   if (config.TEST_MODE) {
     console.log(`[XService] TEST_MODE active: Generating simulated replies for tweet ${tweetId}`);
-    return generateMockComments(tweetId, 25);
+    return {
+      comments: generateMockComments(tweetId, 25),
+      warning: '🧪 Running in Test/Simulation Mode (set TEST_MODE=false with valid API key for live posts).'
+    };
   }
 
-  // 1. Try Third-Party API if key exists
+  // 1. Try Third-Party API if key exists (Safest, No bans)
   if (config.TWITTERAPI_IO_KEY) {
     try {
       console.log(`[XService] Fetching replies via Third-Party API for tweet ${tweetId}...`);
-      const results = await fetchRepliesViaThirdParty(tweetId);
-      if (results && results.length > 0) return results;
+      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 10000, 'Third-party API');
+      if (results && results.length > 0) return { comments: results };
     } catch (err) {
-      console.warn(`[XService] Third-Party API failed: ${err.message}. Falling back to cookies.`);
+      console.warn(`[XService] Third-Party API failed: ${err.message}. Falling back.`);
     }
   }
 
-  // 2. Try agent-twitter-client Scraper with cookies / auth
-  if (config.TWITTER_AUTH_TOKEN || config.TWITTER_USERNAME) {
+  // 2. Try Scraper / GraphQL with cookies
+  if (config.TWITTER_AUTH_TOKEN) {
+    let authError = null;
+
     try {
-      console.log(`[XService] Fetching replies via X conversation search for tweet ${tweetId}...`);
-      const results = await fetchRepliesViaScraper(tweetId);
-      if (results && results.length > 0) return results;
+      console.log(`[XService] Attempting direct GraphQL for tweet ${tweetId}...`);
+      const results = await withTimeout(fetchRepliesViaGraphQL(tweetId), 8000, 'Direct GraphQL');
+      if (results && results.length > 0) return { comments: results };
     } catch (err) {
-      console.warn(`[XService] Scraper search failed: ${err.message}. Trying direct GraphQL...`);
+      console.warn(`[XService] GraphQL failed: ${err.message}`);
+      if (err.response?.status === 401 || err.response?.status === 403 || err.response?.data?.errors?.[0]?.message?.includes('suspended')) {
+        authError = 'X account suspended or session expired';
+      }
     }
 
-    // 3. Fallback to direct GraphQL
     try {
-      console.log(`[XService] Fetching replies via X GraphQL for tweet ${tweetId}...`);
-      const results = await fetchRepliesViaGraphQL(tweetId);
-      if (results && results.length > 0) return results;
+      console.log(`[XService] Attempting conversation search for tweet ${tweetId}...`);
+      const results = await withTimeout(fetchRepliesViaScraper(tweetId), 8000, 'Scraper search');
+      if (results && results.length > 0) return { comments: results };
     } catch (err) {
-      console.warn(`[XService] Direct GraphQL failed: ${err.message}`);
+      console.warn(`[XService] Scraper search failed: ${err.message}`);
+      if (err.message?.includes('suspended') || err.message?.includes('401') || err.message?.includes('403')) {
+        authError = 'X account suspended or session expired';
+      }
+    }
+
+    if (authError) {
+      throw new Error(`⚠️ **X Account Suspended / Expired Session**: X flagged the session cookies. Use an API Key (e.g. from twitterapi.io) or enable TEST_MODE=true in Render.`);
     }
   }
 
-  // If no credentials configured, notify and provide mock for testing
+  // If no credentials configured, fallback to test simulation mode
   if (!config.TWITTER_AUTH_TOKEN && !config.TWITTER_USERNAME && !config.TWITTERAPI_IO_KEY) {
-    console.warn(`[XService] Notice: No X credentials configured in .env. Falling back to test simulation mode.`);
-    return generateMockComments(tweetId, 25);
+    console.warn(`[XService] Notice: No X credentials configured. Falling back to test simulation mode.`);
+    return {
+      comments: generateMockComments(tweetId, 25),
+      warning: '🧪 Simulated comments (No X credentials found). Enable TwitterAPI.io or add fresh cookies.'
+    };
   }
 
-  return [];
+  return { comments: [] };
 }
 
 module.exports = {

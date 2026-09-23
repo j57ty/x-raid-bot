@@ -107,7 +107,8 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
 
   try {
     // 1. Fetch comments from X
-    const comments = await getTweetComments(parsed.tweetId);
+    const result = await getTweetComments(parsed.tweetId);
+    const comments = result.comments || [];
 
     if (!comments || comments.length === 0) {
       await ctx.api.editMessageText(
@@ -115,7 +116,8 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
         statusMsg.message_id,
         `⚠️ **No comments found on target post.**\n\n` +
         `Post: ${parsed.cleanUrl}\n` +
-        `Either the tweet has no replies yet, or replies are restricted.`,
+        `Either the tweet has no replies yet, or replies are restricted.\n\n` +
+        `💡 *If X has flagged your account, switch to TEST_MODE=true in Render or use a TwitterAPI.io key.*`,
         { parse_mode: 'Markdown' }
       );
       return;
@@ -131,7 +133,11 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     });
 
     // 4. Update the initial message with the first batch
-    const firstMsgText = formattedMessages[0];
+    let firstMsgText = formattedMessages[0];
+    if (result.warning) {
+      firstMsgText += `\n\n_${result.warning}_`;
+    }
+
     await ctx.api.editMessageText(
       ctx.chat.id,
       statusMsg.message_id,
@@ -161,11 +167,17 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
 
   } catch (error) {
     console.error('[Raid Error]:', error);
-    await ctx.api.editMessageText(
-      ctx.chat.id,
-      statusMsg.message_id,
-      `❌ **Error executing raid:** ${error.message || 'Unknown error occurred.'}`
-    );
+    try {
+      await ctx.api.editMessageText(
+        ctx.chat.id,
+        statusMsg.message_id,
+        `❌ **Raid Failed:** ${error.message || 'Unknown error occurred.'}\n\n` +
+        `💡 *Tip: If your X account was suspended, use TEST_MODE=true in Render or configure a TwitterAPI.io key.*`,
+        { parse_mode: 'Markdown' }
+      );
+    } catch (editErr) {
+      console.error('[Raid Error] Failed to edit status message:', editErr.message);
+    }
   }
 }
 
