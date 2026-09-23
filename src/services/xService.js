@@ -169,7 +169,7 @@ async function fetchRepliesViaGraphQL(tweetId) {
 /**
  * Strategy 3: Third-Party API (e.g., twitterapi.io) with multi-page cursor pagination.
  */
-async function fetchRepliesViaThirdParty(tweetId, maxPages = 4) {
+async function fetchRepliesViaThirdParty(tweetId, maxPages = 3) {
   if (!config.TWITTERAPI_IO_KEY) {
     throw new Error('TWITTERAPI_IO_KEY not configured.');
   }
@@ -184,37 +184,49 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = 4) {
       params.cursor = cursor;
     }
 
-    console.log(`[TwitterAPI.io] Fetching replies page ${page} for tweet ${tweetId}...`);
-    const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
-      params,
-      headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
-      timeout: 15000
-    });
+    try {
+      console.log(`[TwitterAPI.io] Fetching replies page ${page} for tweet ${tweetId}...`);
+      const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
+        params,
+        headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+        timeout: 25000
+      });
 
-    const tweets = response.data?.tweets || response.data?.replies || [];
-    for (const tweet of tweets) {
-      if (tweet.id && String(tweet.id) !== String(tweetId)) {
-        const author = tweet.author?.userName || tweet.userName || 'user';
-        const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
-        comments.push({
-          id: tweet.id,
-          author,
-          text: tweet.text || '',
-          url: rawUrl.replace('twitter.com', 'x.com')
-        });
+      const tweets = response.data?.tweets || response.data?.replies || [];
+      for (const tweet of tweets) {
+        if (tweet.id && String(tweet.id) !== String(tweetId)) {
+          const author = tweet.author?.userName || tweet.userName || 'user';
+          const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
+          comments.push({
+            id: tweet.id,
+            author,
+            text: tweet.text || '',
+            url: rawUrl.replace('twitter.com', 'x.com')
+          });
+        }
       }
-    }
 
-    // Check if there is another page
-    if (!response.data?.has_next_page || !response.data?.next_cursor) {
-      break;
-    }
+      // Check if there is another page
+      if (!response.data?.has_next_page || !response.data?.next_cursor) {
+        break;
+      }
 
-    cursor = response.data.next_cursor;
+      cursor = response.data.next_cursor;
 
-    // Respect TwitterAPI.io free-tier QPS limit (1 request every 5 seconds)
-    if (page < maxPages) {
-      await sleep(5200);
+      // Respect TwitterAPI.io free-tier QPS limit (1 request every 5 seconds)
+      if (page < maxPages) {
+        await sleep(5500);
+      }
+    } catch (err) {
+      console.warn(`[TwitterAPI.io] Page ${page} failed:`, err.response?.data?.message || err.message);
+      // If we already got real comments from previous page, keep them!
+      if (comments.length > 0) {
+        break;
+      }
+      if (err.response?.status === 429) {
+        throw new Error('Twitter API rate limit: The free tier allows 1 request every 5 seconds. Please wait 5 seconds and retry.');
+      }
+      throw err;
     }
   }
 
@@ -273,13 +285,16 @@ async function getTweetComments(tweetId) {
   if (config.TWITTERAPI_IO_KEY) {
     try {
       console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId}...`);
-      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 50000, 'TwitterAPI.io');
+      const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 45000, 'TwitterAPI.io');
       if (results && results.length > 0) {
         console.log(`[XService] Successfully retrieved ${results.length} real comments for tweet ${tweetId}`);
         return { comments: results };
       }
+      return { comments: [] };
     } catch (err) {
-      console.warn(`[XService] Third-Party API failed: ${err.message}. Checking fallbacks...`);
+      console.error(`[XService] Live Twitter API failed:`, err.message);
+      // DO NOT silently fall back to fake comments! Report the actual reason to user.
+      throw new Error(err.message || 'Failed to fetch comments from Twitter API.');
     }
   }
 
@@ -314,16 +329,12 @@ async function getTweetComments(tweetId) {
     }
   }
 
-  // 3. Fallback to test simulation only if no credentials or explicit TEST_MODE without keys
-  if (config.TEST_MODE || (!config.TWITTER_AUTH_TOKEN && !config.TWITTER_USERNAME && !config.TWITTERAPI_IO_KEY)) {
-    console.warn(`[XService] Notice: Falling back to test simulation mode for tweet ${tweetId}.`);
-    return {
-      comments: generateMockComments(tweetId, 25),
-      warning: '🧪 Simulated test comments (Live API was unavailable).'
-    };
-  }
-
-  return { comments: [] };
+  // 3. Fallback to test simulation ONLY if no credentials at all
+  console.warn(`[XService] Notice: No credentials configured, using simulation mode.`);
+  return {
+    comments: generateMockComments(tweetId, 25),
+    warning: '🧪 Simulated test comments (No API key found in configuration).'
+  };
 }
 
 module.exports = {
