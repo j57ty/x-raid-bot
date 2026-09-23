@@ -3,7 +3,7 @@ const config = require('./config');
 const { requireGroupAdmin } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
-const { formatRaidMessages } = require('./utils/messageFormatter');
+const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
 
 if (!config.TELEGRAM_BOT_TOKEN) {
   console.error('❌ FATAL: TELEGRAM_BOT_TOKEN is not defined in .env!');
@@ -20,13 +20,50 @@ bot.catch((err) => {
 });
 
 /**
+ * Robust message editing with automatic fallback to plain text if HTML parsing fails
+ */
+async function safeEditMessage(ctx, messageId, text, options = {}) {
+  try {
+    return await ctx.api.editMessageText(ctx.chat.id, messageId, text, {
+      parse_mode: 'HTML',
+      ...options
+    });
+  } catch (err) {
+    console.warn('[SafeEdit] HTML edit failed, retrying plain text:', err.message);
+    const plainText = text.replace(/<[^>]*>/g, '');
+    return await ctx.api.editMessageText(ctx.chat.id, messageId, plainText, {
+      ...options,
+      parse_mode: undefined
+    });
+  }
+}
+
+/**
+ * Robust reply with automatic fallback to plain text if HTML parsing fails
+ */
+async function safeReply(ctx, text, options = {}) {
+  try {
+    return await ctx.reply(text, {
+      parse_mode: 'HTML',
+      ...options
+    });
+  } catch (err) {
+    console.warn('[SafeReply] HTML reply failed, retrying plain text:', err.message);
+    const plainText = text.replace(/<[^>]*>/g, '');
+    return await ctx.reply(plainText, {
+      ...options,
+      parse_mode: undefined
+    });
+  }
+}
+
+/**
  * Command: /start or /help
  */
 bot.command(['start', 'help'], async (ctx) => {
   const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
 
   if (isGroup) {
-    // Check if sender is admin for group usage
     try {
       const member = await ctx.getChatMember(ctx.from.id);
       const isAdmin = member.status === 'creator' || member.status === 'administrator';
@@ -39,19 +76,19 @@ bot.command(['start', 'help'], async (ctx) => {
   }
 
   const welcomeMessage = 
-    `🤖 **X Raid Telegram Bot**\n\n` +
-    `This bot extracts comments from any X (Twitter) post, selects **40% of the comments randomly**, ` +
+    `🤖 <b>X Raid Telegram Bot</b>\n\n` +
+    `This bot extracts comments from any X (Twitter) post, selects <b>40% of the comments randomly</b>, ` +
     `and delivers direct links to the group for raiders to work on.\n\n` +
-    `🔒 **Security:** Only group administrators can trigger raids.\n\n` +
-    `📌 **Commands:**\n` +
-    `• \`/raid <X_LINK>\` — Start a raid (selects 40% of comments by default)\n` +
-    `• \`/raid <X_LINK> <PERCENT>\` — Raid with custom percentage (e.g., \`/raid https://x.com/... 50\`)\n` +
-    `• \`/status\` — View bot operational status\n` +
-    `• \`/help\` — Display this instructions menu\n\n` +
-    `💡 **Example:**\n` +
-    `\`/raid https://x.com/elonmusk/status/1890000000000000000\``;
+    `🔒 <b>Security:</b> Only group administrators can trigger raids.\n\n` +
+    `📌 <b>Commands:</b>\n` +
+    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (selects 40% of comments by default)\n` +
+    `• <code>/raid &lt;X_LINK&gt; &lt;PERCENT&gt;</code> — Raid with custom percentage\n` +
+    `• <code>/status</code> — View bot operational status\n` +
+    `• <code>/help</code> — Display this instructions menu\n\n` +
+    `💡 <b>Example:</b>\n` +
+    `<code>/raid https://x.com/elonmusk/status/1890000000000000000</code>`;
 
-  await ctx.reply(welcomeMessage, { parse_mode: 'Markdown' });
+  await safeReply(ctx, welcomeMessage);
 });
 
 /**
@@ -64,18 +101,18 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
   
   const modeStatus = config.TEST_MODE 
     ? '🧪 Test/Simulation Mode' 
-    : (hasXCookies ? '✅ Live X Cookies' : (hasThirdParty ? '✅ Third-Party API' : '⚠️ Test/Simulation (No X credentials)'));
+    : (hasThirdParty ? '✅ Live TwitterAPI.io' : (hasXCookies ? '✅ Live X Cookies' : '⚠️ Test/Simulation (No X credentials)'));
 
   const statusMsg = 
-    `📊 **Bot Status Report**\n\n` +
-    `• **Uptime:** ${uptimeMinutes} minutes\n` +
-    `• **X Data Source:** ${modeStatus}\n` +
-    `• **Default Sample Rate:** ${config.DEFAULT_SAMPLE_PERCENT}%\n` +
-    `• **Auto-delete warnings:** ${config.DELETE_WARNING_AFTER_SECONDS}s\n` +
-    `• **Group Pinning:** ${config.PIN_RAID_MESSAGE ? 'Enabled' : 'Disabled'}\n` +
-    `• **Bot Permissions:** Admin in this chat ✅`;
+    `📊 <b>Bot Status Report</b>\n\n` +
+    `• <b>Uptime:</b> ${uptimeMinutes} minutes\n` +
+    `• <b>X Data Source:</b> ${escapeHtml(modeStatus)}\n` +
+    `• <b>Default Sample Rate:</b> ${config.DEFAULT_SAMPLE_PERCENT}%\n` +
+    `• <b>Auto-delete warnings:</b> ${config.DELETE_WARNING_AFTER_SECONDS}s\n` +
+    `• <b>Group Pinning:</b> ${config.PIN_RAID_MESSAGE ? 'Enabled' : 'Disabled'}\n` +
+    `• <b>Bot Permissions:</b> Admin in this chat ✅`;
 
-  await ctx.reply(statusMsg, { parse_mode: 'Markdown' });
+  await safeReply(ctx, statusMsg);
 });
 
 /**
@@ -84,11 +121,11 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
 async function handleRaidExecution(ctx, inputUrl, inputPercent) {
   const parsed = parseTweetUrl(inputUrl);
   if (!parsed) {
-    await ctx.reply(
-      `⚠️ **Invalid Link**: Please provide a valid X (Twitter) post URL.\n\n` +
-      `**Usage:**\n\`/raid https://x.com/username/status/1234567890\`\n` +
-      `**Optional custom percentage:**\n\`/raid https://x.com/username/status/1234567890 50\``,
-      { parse_mode: 'Markdown' }
+    await safeReply(
+      ctx,
+      `⚠️ <b>Invalid Link</b>: Please provide a valid X (Twitter) post URL.\n\n` +
+      `<b>Usage:</b>\n<code>/raid https://x.com/username/status/1234567890</code>\n` +
+      `<b>Optional custom percentage:</b>\n<code>/raid https://x.com/username/status/1234567890 50</code>`
     );
     return;
   }
@@ -98,11 +135,11 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     : config.DEFAULT_SAMPLE_PERCENT;
 
   // Send initial pending message
-  const statusMsg = await ctx.reply(
-    `⏳ **Scanning X Post...**\n` +
-    `🎯 Post: \`${parsed.cleanUrl}\`\n` +
-    `Fetching comments and preparing a **${samplePercent}%** raid selection...`,
-    { parse_mode: 'Markdown' }
+  const statusMsg = await safeReply(
+    ctx,
+    `⏳ <b>Scanning X Post...</b>\n` +
+    `🎯 Post: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
+    `Fetching comments and preparing a <b>${samplePercent}%</b> raid selection...`
   );
 
   try {
@@ -111,14 +148,12 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     const comments = result.comments || [];
 
     if (!comments || comments.length === 0) {
-      await ctx.api.editMessageText(
-        ctx.chat.id,
+      await safeEditMessage(
+        ctx,
         statusMsg.message_id,
-        `⚠️ **No comments found on target post.**\n\n` +
-        `Post: ${parsed.cleanUrl}\n` +
-        `Either the tweet has no replies yet, or replies are restricted.\n\n` +
-        `💡 *If X has flagged your account, switch to TEST_MODE=true in Render or use a TwitterAPI.io key.*`,
-        { parse_mode: 'Markdown' }
+        `⚠️ <b>No comments found on target post.</b>\n\n` +
+        `Post: ${escapeHtml(parsed.cleanUrl)}\n` +
+        `Either the tweet has no replies yet, or replies are restricted.`
       );
       return;
     }
@@ -135,15 +170,14 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     // 4. Update the initial message with the first batch
     let firstMsgText = formattedMessages[0];
     if (result.warning) {
-      firstMsgText += `\n\n_${result.warning}_`;
+      firstMsgText += `\n\n<i>${escapeHtml(result.warning)}</i>`;
     }
 
-    await ctx.api.editMessageText(
-      ctx.chat.id,
+    await safeEditMessage(
+      ctx,
       statusMsg.message_id,
       firstMsgText,
       {
-        parse_mode: 'Markdown',
         link_preview_options: { is_disabled: true }
       }
     );
@@ -159,25 +193,18 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
 
     // 6. Send remaining batches if comments exceeded single message limit
     for (let i = 1; i < formattedMessages.length; i++) {
-      await ctx.reply(formattedMessages[i], {
-        parse_mode: 'Markdown',
+      await safeReply(ctx, formattedMessages[i], {
         link_preview_options: { is_disabled: true }
       });
     }
 
   } catch (error) {
     console.error('[Raid Error]:', error);
-    try {
-      await ctx.api.editMessageText(
-        ctx.chat.id,
-        statusMsg.message_id,
-        `❌ **Raid Failed:** ${error.message || 'Unknown error occurred.'}\n\n` +
-        `💡 *Tip: If your X account was suspended, use TEST_MODE=true in Render or configure a TwitterAPI.io key.*`,
-        { parse_mode: 'Markdown' }
-      );
-    } catch (editErr) {
-      console.error('[Raid Error] Failed to edit status message:', editErr.message);
-    }
+    await safeEditMessage(
+      ctx,
+      statusMsg.message_id,
+      `❌ <b>Raid Failed:</b> ${escapeHtml(error.message || 'Unknown error occurred.')}`
+    );
   }
 }
 

@@ -1,6 +1,18 @@
 const config = require('../config');
 
 /**
+ * Escapes special HTML characters so Telegram's HTML parser never breaks
+ * on usernames with underscores, ampersands, or brackets.
+ */
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
  * Splits an array into chunks of a given size.
  * @param {Array} arr 
  * @param {number} size 
@@ -15,20 +27,20 @@ function chunkArray(arr, size) {
 }
 
 /**
- * Formats raid comment links into one or more Telegram messages.
+ * Formats raid comment links into one or more Telegram messages using safe HTML.
  * 
  * @param {Object} params
  * @param {string} params.targetUrl - Original X post URL
  * @param {Object} params.sampleResult - Output from pickCommentsSample
- * @returns {Array<string>} Array of message strings ready to be sent to Telegram
+ * @returns {Array<string>} Array of message strings formatted in HTML for Telegram
  */
 function formatRaidMessages({ targetUrl, sampleResult }) {
   const { totalComments, samplePercentage, selectedCount, selectedComments } = sampleResult;
 
   if (selectedComments.length === 0) {
     return [
-      `⚠️ **No comments found on target post**\n\n` +
-      `🔗 **Target Post:** ${targetUrl}\n` +
+      `⚠️ <b>No comments found on target post</b>\n\n` +
+      `🔗 <b>Target Post:</b> ${escapeHtml(targetUrl)}\n` +
       `Check if the post has any replies or if replies are restricted.`
     ];
   }
@@ -48,23 +60,24 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
 
     if (index === 0) {
       // Header on the first message
-      msg += `⚔️ **X RAID MISSION ACTIVATED** ⚔️\n\n`;
-      msg += `🎯 **Target Post:** ${targetUrl}\n`;
-      msg += `📊 **Comments Found:** ${totalComments} | **Raid Selection (${samplePercentage}%):** ${selectedCount}\n\n`;
-      msg += `👇 **Raiders, engage the target comments below:**\n\n`;
+      msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
+      msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
+      msg += `📊 <b>Comments Found:</b> ${totalComments} | <b>Raid Selection (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>Raiders, engage the target comments below:</b>\n\n`;
     } else {
       // Continuation header for subsequent messages
-      msg += `⚔️ **RAID TARGETS (Part ${batchNumber}/${totalBatches})**\n\n`;
+      msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
     }
 
     chunk.forEach((comment, idx) => {
       const globalNum = startIndex + idx + 1;
       const authorText = comment.author ? `@${comment.author}` : 'Comment';
-      msg += `${globalNum}. [${authorText}](${comment.url})\n   \`${comment.url}\`\n`;
+      const cleanUrl = comment.url || targetUrl;
+      msg += `${globalNum}. <a href="${escapeHtml(cleanUrl)}">${escapeHtml(authorText)}</a>\n   <code>${escapeHtml(cleanUrl)}</code>\n`;
     });
 
     if (index === totalBatches - 1) {
-      msg += `\n🔥 **Instructions:** Click each link, drop likes, and reply to boost visibility!`;
+      msg += `\n🔥 <b>Instructions:</b> Click each link, drop likes, and reply to boost visibility!`;
     }
 
     messages.push(msg);
@@ -75,5 +88,6 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
 
 module.exports = {
   formatRaidMessages,
-  chunkArray
+  chunkArray,
+  escapeHtml
 };

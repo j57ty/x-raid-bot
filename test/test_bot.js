@@ -94,8 +94,8 @@ const formatted = formatRaidMessages({
 // 40 comments with MAX_LINKS_PER_MESSAGE = 15 should produce 3 chunked messages (15 + 15 + 10)
 assert.strictEqual(formatted.length, 3);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
-assert(formatted[0].includes('⚔️ **X RAID MISSION ACTIVATED** ⚔️'));
+assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
 assert(formatted[0].includes('https://x.com/'));
-console.log('  ✅ Message structure contains proper markdown & raid instructions\n');
+console.log('  ✅ Message structure contains proper HTML & raid instructions\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
