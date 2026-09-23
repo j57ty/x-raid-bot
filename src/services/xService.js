@@ -269,27 +269,21 @@ function withTimeout(promise, ms, operationName = 'Operation') {
  * @returns {Promise<{ comments: Array<Object>, warning?: string }>}
  */
 async function getTweetComments(tweetId) {
-  // If test mode is enabled, return simulated comments
-  if (config.TEST_MODE) {
-    console.log(`[XService] TEST_MODE active: Generating simulated replies for tweet ${tweetId}`);
-    return {
-      comments: generateMockComments(tweetId, 25),
-      warning: '🧪 Running in Test/Simulation Mode (set TEST_MODE=false with valid API key for live posts).'
-    };
-  }
-
-  // 1. Try Third-Party API if key exists (Safest, No bans)
+  // 1. Always prioritize live Third-Party API if key exists (Live real replies, no bans)
   if (config.TWITTERAPI_IO_KEY) {
     try {
-      console.log(`[XService] Fetching replies via Third-Party API for tweet ${tweetId}...`);
+      console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId}...`);
       const results = await withTimeout(fetchRepliesViaThirdParty(tweetId), 50000, 'TwitterAPI.io');
-      if (results && results.length > 0) return { comments: results };
+      if (results && results.length > 0) {
+        console.log(`[XService] Successfully retrieved ${results.length} real comments for tweet ${tweetId}`);
+        return { comments: results };
+      }
     } catch (err) {
-      console.warn(`[XService] Third-Party API failed: ${err.message}. Falling back.`);
+      console.warn(`[XService] Third-Party API failed: ${err.message}. Checking fallbacks...`);
     }
   }
 
-  // 2. Try Scraper / GraphQL with cookies
+  // 2. Try Scraper / GraphQL with cookies if configured
   if (config.TWITTER_AUTH_TOKEN) {
     let authError = null;
 
@@ -316,16 +310,16 @@ async function getTweetComments(tweetId) {
     }
 
     if (authError) {
-      throw new Error(`⚠️ **X Account Suspended / Expired Session**: X flagged the session cookies. Use an API Key (e.g. from twitterapi.io) or enable TEST_MODE=true in Render.`);
+      throw new Error(`⚠️ **X Account Suspended / Expired Session**: X flagged the session cookies. Use an API Key (e.g. from twitterapi.io).`);
     }
   }
 
-  // If no credentials configured, fallback to test simulation mode
-  if (!config.TWITTER_AUTH_TOKEN && !config.TWITTER_USERNAME && !config.TWITTERAPI_IO_KEY) {
-    console.warn(`[XService] Notice: No X credentials configured. Falling back to test simulation mode.`);
+  // 3. Fallback to test simulation only if no credentials or explicit TEST_MODE without keys
+  if (config.TEST_MODE || (!config.TWITTER_AUTH_TOKEN && !config.TWITTER_USERNAME && !config.TWITTERAPI_IO_KEY)) {
+    console.warn(`[XService] Notice: Falling back to test simulation mode for tweet ${tweetId}.`);
     return {
       comments: generateMockComments(tweetId, 25),
-      warning: '🧪 Simulated comments (No X credentials found). Enable TwitterAPI.io or add fresh cookies.'
+      warning: '🧪 Simulated test comments (Live API was unavailable).'
     };
   }
 

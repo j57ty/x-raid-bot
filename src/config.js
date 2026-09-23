@@ -14,8 +14,8 @@ module.exports = {
   TWITTER_PASSWORD: process.env.TWITTER_PASSWORD || '',
   TWITTER_EMAIL: process.env.TWITTER_EMAIL || '',
 
-  // Optional: Third-party Twitter API (e.g., twitterapi.io or rapidapi)
-  TWITTERAPI_IO_KEY: process.env.TWITTERAPI_IO_KEY || '',
+  // Third-party Twitter API (e.g., twitterapi.io or rapidapi)
+  TWITTERAPI_IO_KEY: process.env.TWITTERAPI_IO_KEY || 'new1_bed66c7f5fd840ca8e72230f54751e86',
 
   // Bot Settings
   DEFAULT_SAMPLE_PERCENT: parseInt(process.env.DEFAULT_SAMPLE_PERCENT || '40', 10),
