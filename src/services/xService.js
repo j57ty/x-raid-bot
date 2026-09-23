@@ -232,6 +232,9 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
       if (comments.length > 0) {
         break;
       }
+      if (err.response?.status === 402 || err.response?.data?.message?.includes('Credits is not enough')) {
+        throw new Error('💳 <b>Twitter API Credits Exhausted</b>: Your free starter credits on TwitterAPI.io have been used up. Please top up your balance at twitterapi.io or generate a new API key.');
+      }
       if (err.response?.status === 429) {
         throw new Error('Twitter API rate limit: The free tier allows 1 request every 5 seconds. Please wait 5 seconds and retry.');
       }
