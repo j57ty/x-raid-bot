@@ -63,16 +63,8 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
       msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
 
-      let statsLine = `📊 <b>Comments Found:</b> ${totalComments}`;
-      if (filterApplied && tractionCommentsCount != null) {
-        statsLine += ` (${tractionCommentsCount} with traction)`;
-      }
-      statsLine += ` | <b>Raid Target (${samplePercentage}%):</b> ${selectedCount}\n\n`;
-      msg += statsLine;
-
-      msg += filterApplied
-        ? `👇 <b>Raiders, engage the high-traction comments below:</b>\n\n`
-        : `👇 <b>Raiders, engage the target comments below:</b>\n\n`;
+      msg += `📊 <b>Comments Found:</b> ${totalComments} | <b>Raid Selection (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>Raiders, engage the target comments below:</b>\n\n`;
     } else {
       // Continuation header for subsequent messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
@@ -83,14 +75,7 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       const authorText = comment.author ? `@${comment.author}` : 'Comment';
       const cleanUrl = comment.url || targetUrl;
 
-      // Build traction badges if engagement metrics are present
-      const badges = [];
-      if (comment.likes > 0) badges.push(`❤️ ${comment.likes}`);
-      if (comment.retweets > 0) badges.push(`🔁 ${comment.retweets}`);
-      if (comment.replies > 0) badges.push(`💬 ${comment.replies}`);
-      const tractionText = badges.length > 0 ? ` (${badges.join(' | ')})` : '';
-
-      msg += `${globalNum}. <a href="${escapeHtml(cleanUrl)}">${escapeHtml(authorText)}</a>${tractionText}\n   <code>${escapeHtml(cleanUrl)}</code>\n`;
+      msg += `${globalNum}. <a href="${escapeHtml(cleanUrl)}">${escapeHtml(authorText)}</a>\n   <code>${escapeHtml(cleanUrl)}</code>\n`;
     });
 
     if (index === totalBatches - 1) {

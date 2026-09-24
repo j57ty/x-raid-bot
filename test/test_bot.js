@@ -116,7 +116,7 @@ assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting & Chunking with Traction Badges
+// 4. Test: Message Formatting & Chunking
 // ----------------------------------------------------
 console.log('Test 4: formatRaidMessages & Chunking');
 const formatted = formatRaidMessages({
@@ -127,9 +127,8 @@ const formatted = formatRaidMessages({
 assert(formatted.length >= 1);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
 assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
-assert(formatted[0].includes('with traction'));
-assert(formatted[0].includes('❤️') || formatted[0].includes('🔁') || formatted[0].includes('💬'));
-console.log('  ✅ Message structure contains proper HTML, traction stats & engagement badges\n');
+assert(formatted[0].includes('https://x.com/'));
+console.log('  ✅ Message structure contains clean links & raid instructions without confusing badges\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
 
