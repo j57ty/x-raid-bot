@@ -65,6 +65,12 @@ async function fetchRepliesViaScraper(tweetId, maxResults = 100) {
   for await (const tweet of tweetIterator) {
     // Exclude the root tweet itself if it shows up in search
     if (tweet.id && String(tweet.id) !== String(tweetId)) {
+      // Exclude nested sub-replies if configured
+      const inReplyTo = tweet.inReplyToStatusId || tweet.inReplyToTweetId;
+      if (config.EXCLUDE_NESTED_REPLIES && inReplyTo && String(inReplyTo) !== String(tweetId)) {
+        continue;
+      }
+
       const username = tweet.username || 'x_user';
       const likes = Number(tweet.likes) || 0;
       const retweets = Number(tweet.retweets) || 0;
@@ -160,6 +166,13 @@ async function fetchRepliesViaGraphQL(tweetId) {
           if (tweetResult && tweetResult.legacy) {
             const commentId = tweetResult.legacy.id_str;
             const author = tweetResult.core?.user_results?.result?.legacy?.screen_name || 'user';
+            const inReplyTo = tweetResult.legacy.in_reply_to_status_id_str;
+
+            // Exclude nested sub-replies if configured
+            if (config.EXCLUDE_NESTED_REPLIES && inReplyTo && String(inReplyTo) !== String(tweetId)) {
+              continue;
+            }
+
             const likes = Number(tweetResult.legacy.favorite_count) || 0;
             const retweets = Number(tweetResult.legacy.retweet_count) || 0;
             const replies = Number(tweetResult.legacy.reply_count) || 0;
@@ -217,6 +230,12 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
       const tweets = response.data?.tweets || response.data?.replies || [];
       for (const tweet of tweets) {
         if (tweet.id && String(tweet.id) !== String(tweetId)) {
+          // Exclude nested sub-replies (replies to other commenters) if configured
+          const inReplyTo = tweet.inReplyToStatusId || tweet.in_reply_to_status_id || tweet.inReplyToTweetId || tweet.parentTweetId || tweet.in_reply_to_status_id_str;
+          if (config.EXCLUDE_NESTED_REPLIES && inReplyTo && String(inReplyTo) !== String(tweetId)) {
+            continue;
+          }
+
           const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
           const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
           const likes = Number(tweet.likeCount ?? tweet.likes ?? tweet.favoriteCount ?? tweet.favorite_count ?? 0);
@@ -313,6 +332,7 @@ function generateMockComments(tweetId, count = 25) {
       replies,
       views,
       quotes,
+      inReplyToStatusId: tweetId,
       engagement: likes + retweets + replies + quotes
     });
   }

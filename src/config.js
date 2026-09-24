@@ -22,6 +22,7 @@ module.exports = {
   MAX_LINKS_PER_MESSAGE: parseInt(process.env.MAX_LINKS_PER_MESSAGE || '15', 10),
   MAX_SCAN_PAGES: parseInt(process.env.MAX_SCAN_PAGES || '25', 10), // 25 pages = up to 500+ comments
   FILTER_ZERO_TRACTION: process.env.FILTER_ZERO_TRACTION !== 'false', // Default true: filters zero-engagement comments
+  EXCLUDE_NESTED_REPLIES: process.env.EXCLUDE_NESTED_REPLIES !== 'false', // Default true: excludes nested sub-replies
   
   // Admin & Permission Settings
   // In private chats, allow anyone or only specific telegram user IDs

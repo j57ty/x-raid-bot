@@ -161,11 +161,22 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     const result = await getTweetComments(parsed.tweetId, onProgress);
     const rawComments = result.comments || [];
 
-    // Filter out any comments made by the post author under their own post
+    // Filter out:
+    // 1. Any comments made by the post author under their own post
+    // 2. Any nested sub-replies (comments replying to other commenters instead of main tweet)
     const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
     const comments = rawComments.filter(c => {
       const commentAuthor = (c.author || '').toLowerCase().replace(/^@/, '');
-      return commentAuthor !== postAuthor;
+      if (commentAuthor === postAuthor) return false;
+
+      if (config.EXCLUDE_NESTED_REPLIES) {
+        const inReplyTo = c.inReplyToStatusId || c.in_reply_to_status_id || c.inReplyToTweetId;
+        if (inReplyTo && String(inReplyTo) !== String(parsed.tweetId)) {
+          return false;
+        }
+      }
+
+      return true;
     });
 
     if (!comments || comments.length === 0) {

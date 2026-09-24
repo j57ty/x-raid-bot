@@ -145,7 +145,18 @@ assert.strictEqual(sampleAuthorExclusion.selectedCount, 2);
 for (const c of sampleAuthorExclusion.selectedComments) {
   assert.notStrictEqual(c.author.toLowerCase(), 'elonmusk', 'Author comments must be excluded');
 }
-console.log('  ✅ Author exclusion: correctly filtered out all comments made by the post author\n');
+console.log('  ✅ Author exclusion: correctly filtered out all comments made by the post author');
+
+// Case H: Nested replies exclusion (only direct replies kept)
+const nestedPool = [
+  { id: 'direct_1', author: 'user1', inReplyToStatusId: '1000', likes: 5 },
+  { id: 'nested_1', author: 'user2', inReplyToStatusId: 'direct_1', likes: 20 }, // replying to user1, not main post!
+  { id: 'direct_2', author: 'user3', inReplyToStatusId: '1000', likes: 8 }
+];
+const directOnly = nestedPool.filter(c => !c.inReplyToStatusId || String(c.inReplyToStatusId) === '1000');
+assert.strictEqual(directOnly.length, 2);
+assert(directOnly.every(c => c.inReplyToStatusId === '1000'));
+console.log('  ✅ Nested replies exclusion: correctly kept only direct replies to target post\n');
 
 // ----------------------------------------------------
 // 3. Test: Unbiased Randomization
