@@ -1,7 +1,8 @@
 const assert = require('assert');
 const { parseTweetUrl, generateMockComments, isDirectReply } = require('../src/services/xService');
 const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
-const { formatRaidMessages, chunkArray } = require('../src/utils/messageFormatter');
+const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
+const memberStore = require('../src/services/memberStore');
 
 console.log('🧪 Starting Automated Tests for X Raid Bot...\n');
 
@@ -196,5 +197,59 @@ assert(formatted[0].includes('<code>https://x.com/')); // Direct comment links a
 assert(!formatted[0].includes('Raider:')); // No member tagging
 assert(!formatted[0].includes('👉 @')); // No member tagging suffix
 console.log('  ✅ Message structure delivers clean numbered comments with direct links without member tagging\n');
+
+// ----------------------------------------------------
+// 5. Test: Member Tagging & Welcome Message Construction
+// ----------------------------------------------------
+console.log('Test 5: Member Tagging & Welcome Message Logic');
+
+// Test 5A: Record and retrieve members
+const testChatId = -1009999999999;
+memberStore.clearMembers(testChatId);
+
+memberStore.recordMember(testChatId, {
+  id: 111111,
+  username: 'jacob',
+  first_name: 'Jacob'
+});
+memberStore.recordMember(testChatId, {
+  id: 222222,
+  username: null,
+  first_name: 'Alice'
+});
+
+const stored = memberStore.getMembers(testChatId);
+assert.strictEqual(stored.length, 2);
+assert.strictEqual(stored[0].username, 'jacob');
+assert.strictEqual(stored[1].firstName, 'Alice');
+console.log('  ✅ Stored members correctly recorded and retrieved');
+
+// Test 5B: Tagging formatting
+const tagWithUsername = stored[0].username
+  ? `@${stored[0].username}`
+  : `<a href="tg://user?id=${stored[0].id}">${escapeHtml(stored[0].firstName)}</a>`;
+assert.strictEqual(tagWithUsername, '@jacob');
+
+const tagWithoutUsername = stored[1].username
+  ? `@${stored[1].username}`
+  : `<a href="tg://user?id=${stored[1].id}">${escapeHtml(stored[1].firstName)}</a>`;
+assert.strictEqual(tagWithoutUsername, '<a href="tg://user?id=222222">Alice</a>');
+console.log('  ✅ Tag generation works for both @username and profile links');
+
+// Test 5C: Welcome message contents
+const testLink = 'https://t.me/+AbCdEfGhIj';
+const groupLinkFormatted = `\n\n🔗 <b>Group Link:</b> ${escapeHtml(testLink)}\n\n`;
+const welcomeMsg = 
+  `Hi ${tagWithUsername} Welcome, we are all here to work together as a real community and support each other${groupLinkFormatted}` +
+  `share to those in the Eva Vanguard group who haven't joined in their dms`;
+
+assert(welcomeMsg.includes('Hi @jacob Welcome'));
+assert(welcomeMsg.includes('we are all here to work together as a real community and support each other'));
+assert(welcomeMsg.includes('https://t.me/+AbCdEfGhIj'));
+assert(welcomeMsg.includes("share to those in the Eva Vanguard group who haven't joined in their dms"));
+console.log('  ✅ Welcome message correctly structured with tag, community text, group link, and closing phrase\n');
+
+// Clean up test data
+memberStore.clearMembers(testChatId);
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');

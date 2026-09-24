@@ -92,6 +92,9 @@ bot.command(['start', 'help'], async (ctx) => {
     `📌 <b>Commands:</b>\n` +
     `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (selects 40% of comments by default)\n` +
     `• <code>/raid &lt;X_LINK&gt; &lt;PERCENT&gt;</code> — Raid with custom percentage\n` +
+    `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
+    `• <code>/raiders</code> — View current active raiders roster (Admin only)\n` +
+    `• <code>/join</code> — Register yourself to the raid roster\n` +
     `• <code>/status</code> — View bot operational status\n` +
     `• <code>/help</code> — Display this instructions menu\n\n` +
     `💡 <b>Example:</b>\n` +
@@ -199,6 +202,113 @@ bot.command('raiders', requireGroupAdmin, async (ctx) => {
     `${escapeHtml(list)}\n\n` +
     `💡 Each raider gets tagged with <b>${config.TARGETS_PER_RAIDER}</b> comments to reply to during a raid.`
   );
+});
+
+/**
+ * Command: /tagall or /everyone or /mentionall (Admin only)
+ * Mentions and tags all known members in the group roster
+ */
+bot.command(['tagall', 'everyone', 'mentionall'], requireGroupAdmin, async (ctx) => {
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  if (!isGroup) {
+    await safeReply(ctx, '⚠️ This command can only be used inside a group.');
+    return;
+  }
+
+  const customText = ctx.message.text.split(/\s+/).slice(1).join(' ').trim();
+  const raiders = await getRaidersForChat(ctx);
+
+  if (raiders.length === 0) {
+    await safeReply(ctx, '⚠️ No members found to tag yet. Members will be tagged as they join or chat in the group.');
+    return;
+  }
+
+  const tags = raiders.map(r => {
+    if (r.username) {
+      return `@${r.username.replace(/^@/, '')}`;
+    }
+    const name = r.firstName || r.first_name || 'Raider';
+    return `<a href="tg://user?id=${r.id}">${escapeHtml(name)}</a>`;
+  });
+
+  // Chunk mentions (8 per message) to guarantee notifications and avoid Telegram entity limits
+  const CHUNK_SIZE = 8;
+  const chunks = [];
+  for (let i = 0; i < tags.length; i += CHUNK_SIZE) {
+    chunks.push(tags.slice(i, i + CHUNK_SIZE));
+  }
+
+  const announcement = customText 
+    ? `📢 <b>Announcement:</b> ${escapeHtml(customText)}\n\n`
+    : `📢 <b>Attention Everyone!</b>\n\n`;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    let msg = '';
+    if (i === 0) {
+      msg += announcement;
+    }
+    msg += chunk.join(' ');
+
+    await safeReply(ctx, msg, {
+      link_preview_options: { is_disabled: true }
+    });
+
+    if (i < chunks.length - 1) {
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+});
+
+/**
+ * Event: New user joins the group
+ * Immediately tags the user and delivers a warm community welcome message with group link
+ */
+bot.on('message:new_chat_members', async (ctx) => {
+  const newMembers = ctx.message.new_chat_members || [];
+
+  for (const member of newMembers) {
+    if (member.is_bot) continue;
+
+    // Immediately record new member
+    memberStore.recordMember(ctx.chat.id, member);
+
+    // Format tag (@username or profile link)
+    const tag = member.username
+      ? `@${member.username.replace(/^@/, '')}`
+      : `<a href="tg://user?id=${member.id}">${escapeHtml(member.first_name || 'Member')}</a>`;
+
+    // Resolve group invite link
+    let groupLink = config.GROUP_INVITE_LINK;
+    if (!groupLink) {
+      try {
+        if (ctx.chat.username) {
+          groupLink = `https://t.me/${ctx.chat.username}`;
+        } else {
+          const chat = await ctx.getChat();
+          groupLink = chat.invite_link;
+          if (!groupLink) {
+            const created = await ctx.api.createChatInviteLink(ctx.chat.id);
+            groupLink = created.invite_link;
+          }
+        }
+      } catch (err) {
+        console.warn('[Welcome] Could not resolve group invite link:', err.message);
+      }
+    }
+
+    const groupLinkFormatted = groupLink 
+      ? `\n\n🔗 <b>Group Link:</b> ${escapeHtml(groupLink)}\n\n` 
+      : '\n\n';
+
+    const welcomeMsg = 
+      `Hi ${tag} Welcome, we are all here to work together as a real community and support each other${groupLinkFormatted}` +
+      `share to those in the Eva Vanguard group who haven't joined in their dms`;
+
+    await safeReply(ctx, welcomeMsg, {
+      link_preview_options: { is_disabled: true }
+    });
+  }
 });
 
 /**
@@ -379,6 +489,8 @@ async function registerBotCommands() {
     // Admin menu (only visible to administrators in groups)
     await bot.api.setMyCommands([
       { command: 'raid', description: 'Launch raid on X post (selects 40% comments)' },
+      { command: 'tagall', description: 'Tag and notify all group members' },
+      { command: 'raiders', description: 'View active raiders in group' },
       { command: 'status', description: 'View bot operational metrics & settings' },
       { command: 'help', description: 'Show raid instructions & guide' }
     ], { scope: { type: 'all_chat_administrators' } });
