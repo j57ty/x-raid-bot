@@ -32,22 +32,16 @@ function getEngagementScore(comment) {
 }
 
 /**
- * Picks a percentage (default 40%) of comments that gained traction.
- * Zero-engagement comments are filtered out first, then a random sample
- * is chosen from the traction pool to keep raiders distributed.
- * If no comments have engagement > 0, it falls back to sampling all comments.
+ * Picks a percentage (default 40%) of comments.
+ * Prioritizes comments that gained traction first, and fills the remaining quota
+ * randomly from the other comments so it ALWAYS delivers exactly 40% of total comments.
  * 
  * @param {Array<Object>} comments - Array of comment objects
  * @param {number} [percentage] - Desired percentage (1 - 100). Defaults to 40%.
  * @param {Object} [options] - Optional configurations
- * @param {boolean} [options.filterZeroTraction=true] - Whether to filter out zero-engagement comments
  * @returns {Object} Sample result with metadata and selected comment list
  */
 function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT, options = {}) {
-  const shouldFilterZero = options.filterZeroTraction !== undefined 
-    ? options.filterZeroTraction 
-    : (config.FILTER_ZERO_TRACTION !== false);
-
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
     return {
       totalComments: 0,
@@ -62,29 +56,40 @@ function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT
   // Ensure percentage is bounded between 1 and 100
   const validPercentage = Math.min(100, Math.max(1, percentage));
 
-  // Identify comments that have gained traction (engagement > 0)
+  // ALWAYS calculate target count from total comments (guaranteeing exact percentage)
+  const targetCount = Math.max(1, Math.round(comments.length * (validPercentage / 100)));
+
+  // Separate comments that gained traction from the rest
   const tractionComments = comments.filter(c => getEngagementScore(c) > 0);
+  const nonTractionComments = comments.filter(c => getEngagementScore(c) === 0);
 
-  // If enabled and traction comments exist, use them as the pool; otherwise fallback
-  const useTractionPool = shouldFilterZero && tractionComments.length > 0;
-  const pool = useTractionPool ? tractionComments : comments;
+  let selected = [];
 
-  // Calculate target count based on the pool (at least 1 if pool is not empty)
-  const targetCount = Math.max(1, Math.round(pool.length * (validPercentage / 100)));
+  if (tractionComments.length >= targetCount) {
+    // If we have enough traction comments, randomly select targetCount from them
+    const shuffledTraction = shuffleArray(tractionComments);
+    selected = shuffledTraction.slice(0, targetCount);
+  } else {
+    // Take all available traction comments
+    selected = [...tractionComments];
 
-  // Randomly shuffle the pool to ensure raiders get distributed
-  const shuffled = shuffleArray(pool);
+    // Fill the remainder of the 40% quota randomly from non-traction comments
+    const needed = targetCount - selected.length;
+    const shuffledNonTraction = shuffleArray(nonTractionComments);
+    const filler = shuffledNonTraction.slice(0, needed);
+    selected.push(...filler);
+  }
 
-  // Take the target count
-  const selectedComments = shuffled.slice(0, targetCount);
+  // Shuffle final selection so raiders get a distributed mix
+  const finalSelectedComments = shuffleArray(selected);
 
   return {
     totalComments: comments.length,
     tractionCommentsCount: tractionComments.length,
     samplePercentage: validPercentage,
-    selectedCount: selectedComments.length,
-    selectedComments,
-    filterApplied: useTractionPool
+    selectedCount: finalSelectedComments.length,
+    selectedComments: finalSelectedComments,
+    filterApplied: tractionComments.length > 0
   };
 }
 

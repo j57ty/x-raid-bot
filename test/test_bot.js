@@ -64,19 +64,47 @@ assert.strictEqual(sampleAllTraction.selectedComments.length, 40);
 console.log(`  ✅ 100 comments (all traction): selected ${sampleAllTraction.selectedCount} (40%)`);
 
 // Case B: 100 comments where 60 have traction, 40 have zero engagement
-// Must filter out zero-engagement comments, then sample 40% from the 60 traction comments (40% of 60 = 24)
+// Traction comments (60) >= 40% quota (40), so exactly 40 selected
 const mixedMock = generateMockComments('1000000', 100);
 const sampleMixed = pickCommentsSample(mixedMock, 40);
 assert.strictEqual(sampleMixed.totalComments, 100);
-assert.strictEqual(sampleMixed.filterApplied, true);
-assert(sampleMixed.tractionCommentsCount > 0, 'Should have identified traction comments');
-// Verify every single selected comment has traction > 0
-for (const c of sampleMixed.selectedComments) {
-  assert((c.likes > 0 || c.retweets > 0 || c.replies > 0), `Selected comment ${c.id} should have engagement`);
-}
-console.log(`  ✅ Mixed pool: filtered out 0-engagement comments, sampled ${sampleMixed.selectedCount} from ${sampleMixed.tractionCommentsCount} traction comments`);
+assert.strictEqual(sampleMixed.selectedCount, 40);
+assert.strictEqual(sampleMixed.selectedComments.length, 40);
+console.log(`  ✅ Mixed pool: selected exactly ${sampleMixed.selectedCount} (40% of 100)`);
 
-// Case C: Fallback when 0 comments have traction (all 0 engagement)
+// Case C: 50 comments where only 5 have traction (fewer than 40% quota = 20)
+// Must take all 5 traction comments + 15 random other comments = exactly 20 comments (40%)
+const fewTractionMock = [
+  ...Array.from({ length: 5 }, (_, i) => ({
+    id: `traction_${i}`,
+    author: `user_${i}`,
+    url: `https://x.com/user_${i}/status/traction_${i}`,
+    likes: 10,
+    retweets: 2,
+    replies: 1
+  })),
+  ...Array.from({ length: 45 }, (_, i) => ({
+    id: `zero_${i}`,
+    author: `zero_${i}`,
+    url: `https://x.com/zero_${i}/status/zero_${i}`,
+    likes: 0,
+    retweets: 0,
+    replies: 0
+  }))
+];
+const sampleFew = pickCommentsSample(fewTractionMock, 40);
+assert.strictEqual(sampleFew.totalComments, 50);
+assert.strictEqual(sampleFew.selectedCount, 20); // 40% of 50 = exactly 20!
+assert.strictEqual(sampleFew.selectedComments.length, 20);
+// Verify all 5 traction comments were included
+const selectedIds = new Set(sampleFew.selectedComments.map(c => c.id));
+for (let i = 0; i < 5; i++) {
+  assert(selectedIds.has(`traction_${i}`), `Traction comment traction_${i} must be included`);
+}
+console.log(`  ✅ Few traction pool: prioritized all 5 traction comments and filled up to exactly 20 (40% of 50)`);
+
+// Case D: When 0 comments have traction (all 0 engagement)
+// Still delivers exactly 40% of total comments
 const zeroTractionMock = Array.from({ length: 20 }, (_, i) => ({
   id: `zero_${i}`,
   author: `user_${i}`,
@@ -88,17 +116,18 @@ const zeroTractionMock = Array.from({ length: 20 }, (_, i) => ({
   engagement: 0
 }));
 const sampleZero = pickCommentsSample(zeroTractionMock, 40);
-assert.strictEqual(sampleZero.selectedCount, 8); // 40% of 20 = 8 fallback
-assert.strictEqual(sampleZero.filterApplied, false);
-console.log(`  ✅ Graceful fallback: when 0 comments have traction, sampled ${sampleZero.selectedCount} (40% of 20)`);
+assert.strictEqual(sampleZero.totalComments, 20);
+assert.strictEqual(sampleZero.selectedCount, 8); // 40% of 20 = exactly 8!
+assert.strictEqual(sampleZero.selectedComments.length, 8);
+console.log(`  ✅ Zero traction pool: delivered exactly ${sampleZero.selectedCount} (40% of 20)`);
 
-// Case D: 1 comment with traction -> 1 selected (at least 1)
+// Case E: 1 comment -> 1 selected (at least 1)
 const singleMock = [{ id: '1', author: 'solo', url: 'https://x.com/solo/status/1', likes: 5, retweets: 1 }];
 const sample1 = pickCommentsSample(singleMock, 40);
 assert.strictEqual(sample1.selectedCount, 1);
 console.log(`  ✅ 1 comment: selected ${sample1.selectedCount}`);
 
-// Case E: 0 comments
+// Case F: 0 comments
 const sample0 = pickCommentsSample([], 40);
 assert.strictEqual(sample0.selectedCount, 0);
 console.log(`  ✅ 0 comments: selected 0\n`);
