@@ -53,15 +53,33 @@ function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT
     };
   }
 
+  // Filter out comments made by the post author if specified
+  let poolComments = comments;
+  if (options.excludeAuthor) {
+    const authorToExclude = String(options.excludeAuthor).toLowerCase().replace(/^@/, '');
+    poolComments = poolComments.filter(c => (c.author || '').toLowerCase().replace(/^@/, '') !== authorToExclude);
+  }
+
+  if (poolComments.length === 0) {
+    return {
+      totalComments: 0,
+      tractionCommentsCount: 0,
+      samplePercentage: percentage,
+      selectedCount: 0,
+      selectedComments: [],
+      filterApplied: false
+    };
+  }
+
   // Ensure percentage is bounded between 1 and 100
   const validPercentage = Math.min(100, Math.max(1, percentage));
 
   // ALWAYS calculate target count from total comments (guaranteeing exact percentage)
-  const targetCount = Math.max(1, Math.round(comments.length * (validPercentage / 100)));
+  const targetCount = Math.max(1, Math.round(poolComments.length * (validPercentage / 100)));
 
   // Separate comments that gained traction from the rest
-  const tractionComments = comments.filter(c => getEngagementScore(c) > 0);
-  const nonTractionComments = comments.filter(c => getEngagementScore(c) === 0);
+  const tractionComments = poolComments.filter(c => getEngagementScore(c) > 0);
+  const nonTractionComments = poolComments.filter(c => getEngagementScore(c) === 0);
 
   let selected = [];
 
@@ -84,7 +102,7 @@ function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT
   const finalSelectedComments = shuffleArray(selected);
 
   return {
-    totalComments: comments.length,
+    totalComments: poolComments.length,
     tractionCommentsCount: tractionComments.length,
     samplePercentage: validPercentage,
     selectedCount: finalSelectedComments.length,

@@ -159,22 +159,29 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     };
 
     const result = await getTweetComments(parsed.tweetId, onProgress);
-    const comments = result.comments || [];
+    const rawComments = result.comments || [];
+
+    // Filter out any comments made by the post author under their own post
+    const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
+    const comments = rawComments.filter(c => {
+      const commentAuthor = (c.author || '').toLowerCase().replace(/^@/, '');
+      return commentAuthor !== postAuthor;
+    });
 
     if (!comments || comments.length === 0) {
       await safeEditMessage(
         ctx,
         statusMsg.message_id,
-        `⚠️ <b>No comments found on target post.</b>\n\n` +
+        `⚠️ <b>No eligible comments found on target post.</b>\n\n` +
         `Post: ${escapeHtml(parsed.cleanUrl)}\n` +
-        `Either the tweet has no replies yet, or replies are restricted.`,
+        `Either the tweet has no replies yet, or all comments were made by the post author (@${escapeHtml(parsed.username)}).`,
         { link_preview_options: { is_disabled: true } }
       );
       return;
     }
 
-    // 2. Select 40% (or requested percent) randomly
-    const sampleResult = pickCommentsSample(comments, samplePercent);
+    // 2. Select 40% (or requested percent) prioritizing traction comments
+    const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
 
     // 3. Format into chunked raid messages
     const formattedMessages = formatRaidMessages({

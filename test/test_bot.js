@@ -130,7 +130,22 @@ console.log(`  ✅ 1 comment: selected ${sample1.selectedCount}`);
 // Case F: 0 comments
 const sample0 = pickCommentsSample([], 40);
 assert.strictEqual(sample0.selectedCount, 0);
-console.log(`  ✅ 0 comments: selected 0\n`);
+console.log(`  ✅ 0 comments: selected 0`);
+
+// Case G: Post author exclusion
+const authorPool = [
+  { id: 'auth_1', author: 'elonmusk', url: 'https://x.com/elonmusk/status/1', likes: 100 },
+  { id: 'auth_2', author: 'ElonMusk', url: 'https://x.com/ElonMusk/status/2', likes: 50 },
+  { id: 'user_1', author: 'supporter_1', url: 'https://x.com/supporter_1/status/3', likes: 10 },
+  { id: 'user_2', author: 'supporter_2', url: 'https://x.com/supporter_2/status/4', likes: 5 }
+];
+const sampleAuthorExclusion = pickCommentsSample(authorPool, 100, { excludeAuthor: 'elonmusk' });
+assert.strictEqual(sampleAuthorExclusion.totalComments, 2);
+assert.strictEqual(sampleAuthorExclusion.selectedCount, 2);
+for (const c of sampleAuthorExclusion.selectedComments) {
+  assert.notStrictEqual(c.author.toLowerCase(), 'elonmusk', 'Author comments must be excluded');
+}
+console.log('  ✅ Author exclusion: correctly filtered out all comments made by the post author\n');
 
 // ----------------------------------------------------
 // 3. Test: Unbiased Randomization
