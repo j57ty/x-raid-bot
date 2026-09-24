@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { parseTweetUrl, generateMockComments } = require('../src/services/xService');
+const { parseTweetUrl, generateMockComments, isDirectReply } = require('../src/services/xService');
 const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray } = require('../src/utils/messageFormatter');
 
@@ -156,7 +156,16 @@ const nestedPool = [
 const directOnly = nestedPool.filter(c => !c.inReplyToStatusId || String(c.inReplyToStatusId) === '1000');
 assert.strictEqual(directOnly.length, 2);
 assert(directOnly.every(c => c.inReplyToStatusId === '1000'));
-console.log('  ✅ Nested replies exclusion: correctly kept only direct replies to target post\n');
+console.log('  ✅ Nested replies exclusion: correctly kept only direct replies to target post');
+
+// Case I: isDirectReply helper across schema variations
+assert.strictEqual(isDirectReply({ inReplyToStatusId: '1000' }, '1000'), true);
+assert.strictEqual(isDirectReply({ inReplyToStatusId: '2000' }, '1000'), false);
+assert.strictEqual(isDirectReply({ in_reply_to_status_id_str: '1000', in_reply_to_screen_name: 'elonmusk' }, '1000', 'elonmusk'), true);
+assert.strictEqual(isDirectReply({ in_reply_to_status_id_str: '1000', in_reply_to_screen_name: 'random_guy' }, '1000', 'elonmusk'), false);
+assert.strictEqual(isDirectReply({ referenced_tweets: [{ type: 'replied_to', id: '2000' }] }, '1000'), false);
+assert.strictEqual(isDirectReply({ referenced_tweets: [{ type: 'replied_to', id: '1000' }] }, '1000'), true);
+console.log('  ✅ isDirectReply helper: verified parent status ID & in-reply-to username across schemas\n');
 
 // ----------------------------------------------------
 // 3. Test: Unbiased Randomization
@@ -171,29 +180,21 @@ assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting, Raider Tagging & Direct Comment Links
+// 4. Test: Message Formatting & Direct Comment Links (No Member Tagging)
 // ----------------------------------------------------
-console.log('Test 4: formatRaidMessages & Raider Assignments');
-const testRaiders = [
-  { id: 101, username: 'alice', firstName: 'Alice' },
-  { id: 102, username: 'bob', firstName: 'Bob' }
-];
-
+console.log('Test 4: formatRaidMessages (Direct links, No member tagging)');
 const formatted = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sampleMixed,
-  raiders: testRaiders
+  sampleResult: sampleMixed
 });
 
 assert(formatted.length >= 1);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
 assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
 assert(formatted[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
-assert(formatted[0].includes('@alice')); // Raider Alice tagged
-assert(formatted[0].includes('@bob')); // Raider Bob tagged
 assert(formatted[0].includes('<code>https://x.com/')); // Direct comment links are included
-assert(formatted[0].includes('👉 @alice') || formatted[0].includes('👉 @bob')); // Tagged per comment
-console.log('  ✅ Message structure tags each group member for their 4 assigned comments and includes direct comment links\n');
+assert(!formatted[0].includes('Raider:')); // No member tagging
+assert(!formatted[0].includes('👉 @')); // No member tagging suffix
+console.log('  ✅ Message structure delivers clean numbered comments with direct links without member tagging\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
-

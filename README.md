@@ -1,6 +1,6 @@
 # ⚔️ Telegram X (Twitter) Raid Bot
 
-A Telegram bot built for raid groups. Given any X (Twitter) post link, it fetches the comments, selects **40% of the comments**, and distributes them to group members by tagging each member to **4 comments to reply to**, along with direct links to the comments.
+A Telegram bot built for raid groups. Given any X (Twitter) post link, it scans direct comments under the post, selects **40% of the comments** (prioritizing traction with random fill), and drops them with clean copyable direct links (`https://x.com/...`) for group members to raid.
 
 To protect group operations, **only group administrators** can trigger or use the bot.
 
@@ -9,9 +9,8 @@ To protect group operations, **only group administrators** can trigger or use th
 ## 🚀 Features
 
 - **🎯 High-Traction 40% Sampling**: Prioritizes comments that gained traction and fills the remainder to guarantee exactly 40% of comments. Excludes post author comments and nested sub-replies.
-- **🏷️ Smart Raider Assignments**: Automatically distributes target comments to group members in batches of 4, tagging each raider 4 times next to their assigned targets.
+- **🚫 Nested Sub-Replies Excluded**: Strictly scans only direct top-level comments under the post, skipping all nested conversation threads.
 - **🔗 Direct Comment Links**: Delivers the exact direct link to each comment (`https://x.com/user/status/...`) along with the commenter's name and `@username`.
-- **👥 Dynamic Raider Roster**: Automatically tracks group administrators and active members who chat, plus `/join` and `/raiders` commands for easy roster management.
 - **🔒 Admin-Only Protection**: Restricts regular group members from triggering raids. Only group `creator` or `administrator` members can execute bot commands.
 - **🛡️ Ephemeral Warning**: If a non-admin attempts to invoke the bot, an alert is sent and automatically cleaned up after a few seconds to prevent chat clutter.
 - **📦 Smart Chunking & Formatting**: Automatically splits long target lists into formatted batches with link previews suppressed, ensuring the chat stays clean and readable.

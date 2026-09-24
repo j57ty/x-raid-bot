@@ -229,7 +229,9 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
   );
 
   try {
-    // 1. Fetch comments from X with live progress updates
+    const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
+
+    // 1. Fetch comments from X with live progress updates (filtering nested replies & post author)
     const onProgress = async (count, page) => {
       try {
         await safeEditMessage(
@@ -237,20 +239,19 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
           statusMsg.message_id,
           `⏳ <b>Scanning X Post...</b>\n` +
           `🎯 Post: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
-          `📥 Discovered <b>${count}</b> comments so far (scanning page ${page})...`
+          `📥 Discovered <b>${count}</b> direct comments so far (scanning page ${page})...`
         );
       } catch (e) {
         // Ignore progress reporting errors
       }
     };
 
-    const result = await getTweetComments(parsed.tweetId, onProgress);
+    const result = await getTweetComments(parsed.tweetId, postAuthor, onProgress);
     const rawComments = result.comments || [];
 
     // Filter out:
     // 1. Any comments made by the post author under their own post
     // 2. Any nested sub-replies (comments replying to other commenters instead of main tweet)
-    const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
     const comments = rawComments.filter(c => {
       const commentAuthor = (c.author || '').toLowerCase().replace(/^@/, '');
       if (commentAuthor === postAuthor) return false;
@@ -269,9 +270,9 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
       await safeEditMessage(
         ctx,
         statusMsg.message_id,
-        `⚠️ <b>No eligible comments found on target post.</b>\n\n` +
+        `⚠️ <b>No eligible direct comments found on target post.</b>\n\n` +
         `Post: ${escapeHtml(parsed.cleanUrl)}\n` +
-        `Either the tweet has no replies yet, or all comments were made by the post author (@${escapeHtml(parsed.username)}).`,
+        `Either the tweet has no replies yet, or all comments were nested replies or made by the post author (@${escapeHtml(parsed.username)}).`,
         { link_preview_options: { is_disabled: true } }
       );
       return;
@@ -280,14 +281,10 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     // 2. Select 40% (or requested percent) prioritizing traction comments
     const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
 
-    // 3. Resolve active group raiders
-    const raiders = await getRaidersForChat(ctx);
-
-    // 4. Format into chunked raid messages (assigns 4 targets per raider, tags them, and includes comment links)
+    // 3. Format into chunked raid messages with direct links (no member tags)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
-      sampleResult,
-      raiders
+      sampleResult
     });
 
     // 4. Update the initial message with the first batch
