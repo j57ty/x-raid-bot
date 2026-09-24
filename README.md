@@ -8,7 +8,8 @@ To protect group operations, **only group administrators** can trigger or use th
 
 ## 🚀 Features
 
-- **🎯 40% Comment Sampling**: Automatically grabs 40% of the comments uniformly at random (or a custom percentage if specified by an admin).
+- **🎯 High-Traction 40% Sampling**: Filters out zero-engagement spam comments first to isolate comments that gained traction (likes, retweets, replies), then samples 40% randomly so raiders distribute engagement across active targets. If all comments have 0 engagement, it gracefully falls back to sampling the full comment pool.
+- **📈 Live Engagement Badges**: Displays real-time traction badges (`[❤️ Likes | 🔁 RTs | 💬 Replies]`) directly alongside each target comment in Telegram so raiders see where the action is.
 - **🔒 Admin-Only Protection**: Restricts regular group members from triggering raids. Only group `creator` or `administrator` members can execute bot commands.
 - **🛡️ Ephemeral Warning**: If a non-admin attempts to invoke the bot, an alert is sent and automatically cleaned up after a few seconds to prevent chat clutter.
 - **📦 Smart Chunking & Formatting**: Automatically splits long link lists into formatted batches (max 15 links per message) with link previews suppressed, ensuring the chat stays clean and readable.

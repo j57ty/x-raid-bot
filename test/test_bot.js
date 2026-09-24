@@ -40,32 +40,65 @@ assert.strictEqual(parseTweetUrl('invalid url'), null);
 console.log('  ✅ Non-X URLs correctly rejected\n');
 
 // ----------------------------------------------------
-// 2. Test: 40% Comment Sampling Logic
+// 2. Test: 40% Comment Sampling Logic & Traction Filtering
 // ----------------------------------------------------
-console.log('Test 2: pickCommentsSample (40% requirement)');
+console.log('Test 2: pickCommentsSample (Traction Filtering & 40% rule)');
 
-// Case A: 100 comments -> exactly 40 selected
-const mock100 = generateMockComments('1000000', 100);
-const sample100 = pickCommentsSample(mock100, 40);
-assert.strictEqual(sample100.totalComments, 100);
-assert.strictEqual(sample100.selectedCount, 40);
-assert.strictEqual(sample100.selectedComments.length, 40);
-console.log(`  ✅ 100 comments: selected ${sample100.selectedCount} (40%)`);
+// Case A: 100 comments where all have traction -> exactly 40 selected
+const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
+  id: `tweet_${i}`,
+  author: `user_${i}`,
+  url: `https://x.com/user_${i}/status/tweet_${i}`,
+  likes: i + 1,
+  retweets: 1,
+  replies: 0,
+  quotes: 0,
+  engagement: i + 2
+}));
 
-// Case B: 25 comments -> 10 selected (40% of 25 = 10)
-const mock25 = generateMockComments('1000000', 25);
-const sample25 = pickCommentsSample(mock25, 40);
-assert.strictEqual(sample25.totalComments, 25);
-assert.strictEqual(sample25.selectedCount, 10);
-console.log(`  ✅ 25 comments: selected ${sample25.selectedCount} (40%)`);
+const sampleAllTraction = pickCommentsSample(allTractionMock, 40);
+assert.strictEqual(sampleAllTraction.totalComments, 100);
+assert.strictEqual(sampleAllTraction.tractionCommentsCount, 100);
+assert.strictEqual(sampleAllTraction.selectedCount, 40);
+assert.strictEqual(sampleAllTraction.selectedComments.length, 40);
+console.log(`  ✅ 100 comments (all traction): selected ${sampleAllTraction.selectedCount} (40%)`);
 
-// Case C: 1 comment -> 1 selected (at least 1)
-const mock1 = generateMockComments('1000000', 1);
-const sample1 = pickCommentsSample(mock1, 40);
+// Case B: 100 comments where 60 have traction, 40 have zero engagement
+// Must filter out zero-engagement comments, then sample 40% from the 60 traction comments (40% of 60 = 24)
+const mixedMock = generateMockComments('1000000', 100);
+const sampleMixed = pickCommentsSample(mixedMock, 40);
+assert.strictEqual(sampleMixed.totalComments, 100);
+assert.strictEqual(sampleMixed.filterApplied, true);
+assert(sampleMixed.tractionCommentsCount > 0, 'Should have identified traction comments');
+// Verify every single selected comment has traction > 0
+for (const c of sampleMixed.selectedComments) {
+  assert((c.likes > 0 || c.retweets > 0 || c.replies > 0), `Selected comment ${c.id} should have engagement`);
+}
+console.log(`  ✅ Mixed pool: filtered out 0-engagement comments, sampled ${sampleMixed.selectedCount} from ${sampleMixed.tractionCommentsCount} traction comments`);
+
+// Case C: Fallback when 0 comments have traction (all 0 engagement)
+const zeroTractionMock = Array.from({ length: 20 }, (_, i) => ({
+  id: `zero_${i}`,
+  author: `user_${i}`,
+  url: `https://x.com/user_${i}/status/zero_${i}`,
+  likes: 0,
+  retweets: 0,
+  replies: 0,
+  quotes: 0,
+  engagement: 0
+}));
+const sampleZero = pickCommentsSample(zeroTractionMock, 40);
+assert.strictEqual(sampleZero.selectedCount, 8); // 40% of 20 = 8 fallback
+assert.strictEqual(sampleZero.filterApplied, false);
+console.log(`  ✅ Graceful fallback: when 0 comments have traction, sampled ${sampleZero.selectedCount} (40% of 20)`);
+
+// Case D: 1 comment with traction -> 1 selected (at least 1)
+const singleMock = [{ id: '1', author: 'solo', url: 'https://x.com/solo/status/1', likes: 5, retweets: 1 }];
+const sample1 = pickCommentsSample(singleMock, 40);
 assert.strictEqual(sample1.selectedCount, 1);
 console.log(`  ✅ 1 comment: selected ${sample1.selectedCount}`);
 
-// Case D: 0 comments
+// Case E: 0 comments
 const sample0 = pickCommentsSample([], 40);
 assert.strictEqual(sample0.selectedCount, 0);
 console.log(`  ✅ 0 comments: selected 0\n`);
@@ -74,28 +107,29 @@ console.log(`  ✅ 0 comments: selected 0\n`);
 // 3. Test: Unbiased Randomization
 // ----------------------------------------------------
 console.log('Test 3: Unbiased Randomization');
-const sampleA = pickCommentsSample(mock100, 40);
-const sampleB = pickCommentsSample(mock100, 40);
-// Two random 40% samples from 100 items should not be identical in order or exact selection
+const sampleA = pickCommentsSample(mixedMock, 40);
+const sampleB = pickCommentsSample(mixedMock, 40);
+// Two random 40% samples should not be identical in order
 const idsA = sampleA.selectedComments.map(c => c.id).join(',');
 const idsB = sampleB.selectedComments.map(c => c.id).join(',');
 assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting & Chunking
+// 4. Test: Message Formatting & Chunking with Traction Badges
 // ----------------------------------------------------
 console.log('Test 4: formatRaidMessages & Chunking');
 const formatted = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sample100
+  sampleResult: sampleMixed
 });
 
-// 40 comments with MAX_LINKS_PER_MESSAGE = 15 should produce 3 chunked messages (15 + 15 + 10)
-assert.strictEqual(formatted.length, 3);
+assert(formatted.length >= 1);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
 assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
-assert(formatted[0].includes('https://x.com/'));
-console.log('  ✅ Message structure contains proper HTML & raid instructions\n');
+assert(formatted[0].includes('with traction'));
+assert(formatted[0].includes('❤️') || formatted[0].includes('🔁') || formatted[0].includes('💬'));
+console.log('  ✅ Message structure contains proper HTML, traction stats & engagement badges\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
+

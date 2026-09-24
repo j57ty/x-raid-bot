@@ -21,6 +21,7 @@ module.exports = {
   DEFAULT_SAMPLE_PERCENT: parseInt(process.env.DEFAULT_SAMPLE_PERCENT || '40', 10),
   MAX_LINKS_PER_MESSAGE: parseInt(process.env.MAX_LINKS_PER_MESSAGE || '15', 10),
   MAX_SCAN_PAGES: parseInt(process.env.MAX_SCAN_PAGES || '10', 10), // 10 pages = up to 200 comments
+  FILTER_ZERO_TRACTION: process.env.FILTER_ZERO_TRACTION !== 'false', // Default true: filters zero-engagement comments
   
   // Admin & Permission Settings
   // In private chats, allow anyone or only specific telegram user IDs

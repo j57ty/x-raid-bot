@@ -66,11 +66,22 @@ async function fetchRepliesViaScraper(tweetId, maxResults = 100) {
     // Exclude the root tweet itself if it shows up in search
     if (tweet.id && String(tweet.id) !== String(tweetId)) {
       const username = tweet.username || 'x_user';
+      const likes = Number(tweet.likes) || 0;
+      const retweets = Number(tweet.retweets) || 0;
+      const replies = Number(tweet.replies) || 0;
+      const views = Number(tweet.views) || 0;
+      const quotes = Number(tweet.quotes) || 0;
       comments.push({
         id: tweet.id,
         author: username,
         text: tweet.text || '',
-        url: `https://x.com/${username}/status/${tweet.id}`
+        url: `https://x.com/${username}/status/${tweet.id}`,
+        likes,
+        retweets,
+        replies,
+        views,
+        quotes,
+        engagement: likes + retweets + replies + quotes
       });
     }
   }
@@ -149,12 +160,23 @@ async function fetchRepliesViaGraphQL(tweetId) {
           if (tweetResult && tweetResult.legacy) {
             const commentId = tweetResult.legacy.id_str;
             const author = tweetResult.core?.user_results?.result?.legacy?.screen_name || 'user';
+            const likes = Number(tweetResult.legacy.favorite_count) || 0;
+            const retweets = Number(tweetResult.legacy.retweet_count) || 0;
+            const replies = Number(tweetResult.legacy.reply_count) || 0;
+            const quotes = Number(tweetResult.legacy.quote_count) || 0;
+            const views = parseInt(tweetResult.views?.count || '0', 10) || 0;
             if (commentId && commentId !== tweetId) {
               comments.push({
                 id: commentId,
                 author,
                 text: tweetResult.legacy.full_text || '',
-                url: `https://x.com/${author}/status/${commentId}`
+                url: `https://x.com/${author}/status/${commentId}`,
+                likes,
+                retweets,
+                replies,
+                views,
+                quotes,
+                engagement: likes + retweets + replies + quotes
               });
             }
           }
@@ -195,13 +217,24 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
       const tweets = response.data?.tweets || response.data?.replies || [];
       for (const tweet of tweets) {
         if (tweet.id && String(tweet.id) !== String(tweetId)) {
-          const author = tweet.author?.userName || tweet.userName || 'user';
+          const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
           const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
+          const likes = Number(tweet.likeCount ?? tweet.likes ?? tweet.favoriteCount ?? tweet.favorite_count ?? 0);
+          const retweets = Number(tweet.retweetCount ?? tweet.retweets ?? 0);
+          const replies = Number(tweet.replyCount ?? tweet.replies ?? 0);
+          const views = Number(tweet.viewCount ?? tweet.views ?? 0);
+          const quotes = Number(tweet.quoteCount ?? tweet.quotes ?? 0);
           comments.push({
             id: tweet.id,
             author,
             text: tweet.text || '',
-            url: rawUrl.replace('twitter.com', 'x.com')
+            url: rawUrl.replace('twitter.com', 'x.com'),
+            likes,
+            retweets,
+            replies,
+            views,
+            quotes,
+            engagement: likes + retweets + replies + quotes
           });
         }
       }
@@ -262,11 +295,25 @@ function generateMockComments(tweetId, count = 25) {
   for (let i = 1; i <= count; i++) {
     const author = mockAuthors[(i - 1) % mockAuthors.length] + (i > mockAuthors.length ? i : '');
     const commentId = `${tweetId.slice(0, 10)}${1000 + i}`;
+    // Give roughly 60% of mock comments traction, and 40% zero engagement
+    const hasTraction = (i % 2 === 0) || (i % 5 === 0);
+    const likes = hasTraction ? (i * 7) % 65 + 1 : 0;
+    const retweets = hasTraction ? (i * 3) % 15 : 0;
+    const replies = hasTraction ? (i * 2) % 8 : 0;
+    const views = hasTraction ? (i * 120) % 2500 + 30 : 0;
+    const quotes = hasTraction ? (i % 4) : 0;
+
     comments.push({
       id: commentId,
       author,
       text: `Mock reply #${i} supporting this post! Let's raid! 🚀`,
-      url: `https://x.com/${author}/status/${commentId}`
+      url: `https://x.com/${author}/status/${commentId}`,
+      likes,
+      retweets,
+      replies,
+      views,
+      quotes,
+      engagement: likes + retweets + replies + quotes
     });
   }
 
