@@ -171,21 +171,29 @@ assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting & Chunking
+// 4. Test: Message Formatting, Raider Tagging & Direct Comment Links
 // ----------------------------------------------------
-console.log('Test 4: formatRaidMessages & Chunking');
+console.log('Test 4: formatRaidMessages & Raider Assignments');
+const testRaiders = [
+  { id: 101, username: 'alice', firstName: 'Alice' },
+  { id: 102, username: 'bob', firstName: 'Bob' }
+];
+
 const formatted = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sampleMixed
+  sampleResult: sampleMixed,
+  raiders: testRaiders
 });
 
 assert(formatted.length >= 1);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
 assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
 assert(formatted[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
-assert(formatted[0].includes('(@')); // Display names & usernames present
-assert(!formatted[0].includes('<code>https://x.com/')); // Direct comment links omitted
-console.log('  ✅ Message structure drops display names and usernames for raiders to find, without comment links\n');
+assert(formatted[0].includes('@alice')); // Raider Alice tagged
+assert(formatted[0].includes('@bob')); // Raider Bob tagged
+assert(formatted[0].includes('<code>https://x.com/')); // Direct comment links are included
+assert(formatted[0].includes('👉 @alice') || formatted[0].includes('👉 @bob')); // Tagged per comment
+console.log('  ✅ Message structure tags each group member for their 4 assigned comments and includes direct comment links\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
 

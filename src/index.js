@@ -4,6 +4,7 @@ const { requireGroupAdmin } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
+const memberStore = require('./services/memberStore');
 
 if (!config.TELEGRAM_BOT_TOKEN) {
   console.error('❌ FATAL: TELEGRAM_BOT_TOKEN is not defined in .env!');
@@ -12,6 +13,14 @@ if (!config.TELEGRAM_BOT_TOKEN) {
 }
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
+
+// Automatically record active group members when they chat
+bot.use(async (ctx, next) => {
+  if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') && ctx.from && !ctx.from.is_bot) {
+    memberStore.recordMember(ctx.chat.id, ctx.from);
+  }
+  return next();
+});
 
 // Global Error Handler
 bot.catch((err) => {
@@ -116,6 +125,83 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
 });
 
 /**
+ * Resolves the active raiders for a chat.
+ * Fetches group administrators from Telegram API and merges with active members from memberStore.
+ */
+async function getRaidersForChat(ctx) {
+  const chatId = ctx.chat.id;
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+
+  if (!isGroup) {
+    return [ctx.from];
+  }
+
+  const memberMap = new Map();
+
+  // 1. Fetch current chat administrators (always available without waiting for chat messages)
+  try {
+    const chatAdmins = await ctx.api.getChatAdministrators(chatId);
+    for (const admin of chatAdmins) {
+      if (admin.user && !admin.user.is_bot) {
+        memberMap.set(String(admin.user.id), admin.user);
+        memberStore.recordMember(chatId, admin.user);
+      }
+    }
+  } catch (err) {
+    console.warn('[Raiders] Could not get chat administrators:', err.message);
+  }
+
+  // 2. Add any other members who chatted or registered in this group
+  const storedMembers = memberStore.getMembers(chatId);
+  for (const m of storedMembers) {
+    if (!memberMap.has(String(m.id))) {
+      memberMap.set(String(m.id), m);
+    }
+  }
+
+  // 3. Fallback to command sender if no other members found
+  if (memberMap.size === 0 && ctx.from) {
+    memberMap.set(String(ctx.from.id), ctx.from);
+  }
+
+  return Array.from(memberMap.values());
+}
+
+/**
+ * Command: /join or /register
+ * Group members can voluntarily register themselves into the raid roster
+ */
+bot.command(['join', 'register'], async (ctx) => {
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  if (!isGroup) {
+    await safeReply(ctx, 'ℹ️ Use <code>/join</code> inside your Telegram raid group to join the roster.');
+    return;
+  }
+  memberStore.recordMember(ctx.chat.id, ctx.from);
+  const tag = ctx.from.username ? `@${ctx.from.username}` : (ctx.from.first_name || 'Raider');
+  await safeReply(ctx, `✅ <b>${escapeHtml(tag)}</b> joined the raid squad! You will be assigned targets on the next raid.`);
+});
+
+/**
+ * Command: /raiders (Admin only)
+ * View current active raiders in the group roster
+ */
+bot.command('raiders', requireGroupAdmin, async (ctx) => {
+  const raiders = await getRaidersForChat(ctx);
+  if (raiders.length === 0) {
+    await safeReply(ctx, '⚠️ No raiders found. Group admins and members who chat are automatically added, or members can type <code>/join</code>.');
+    return;
+  }
+  const list = raiders.map((r, i) => `${i + 1}. ${r.username ? `@${r.username}` : (r.firstName || r.first_name || 'Member')}`).join('\n');
+  await safeReply(
+    ctx,
+    `👥 <b>Active Raiders Roster (${raiders.length}):</b>\n\n` +
+    `${escapeHtml(list)}\n\n` +
+    `💡 Each raider gets tagged with <b>${config.TARGETS_PER_RAIDER}</b> comments to reply to during a raid.`
+  );
+});
+
+/**
  * Core Handler for initiating a raid
  */
 async function handleRaidExecution(ctx, inputUrl, inputPercent) {
@@ -194,10 +280,14 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     // 2. Select 40% (or requested percent) prioritizing traction comments
     const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
 
-    // 3. Format into chunked raid messages
+    // 3. Resolve active group raiders
+    const raiders = await getRaidersForChat(ctx);
+
+    // 4. Format into chunked raid messages (assigns 4 targets per raider, tags them, and includes comment links)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
-      sampleResult
+      sampleResult,
+      raiders
     });
 
     // 4. Update the initial message with the first batch
