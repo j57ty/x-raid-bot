@@ -28,14 +28,15 @@ function chunkArray(arr, size) {
 
 /**
  * Formats raid comment links into one or more Telegram messages using safe HTML.
- * Drops the direct comment links without tagging group members.
+ * Drops the direct comment links and tags group raiders once in the mission header.
  * 
  * @param {Object} params
  * @param {string} params.targetUrl - Original X post URL
  * @param {Object} params.sampleResult - Output from pickCommentsSample
+ * @param {Array<Object>} [params.raiders] - Array of group member objects to tag once in header
  * @returns {Array<string>} Array of message strings formatted in HTML for Telegram
  */
-function formatRaidMessages({ targetUrl, sampleResult }) {
+function formatRaidMessages({ targetUrl, sampleResult, raiders = [] }) {
   const { totalComments, samplePercentage, selectedCount, selectedComments } = sampleResult;
 
   if (selectedComments.length === 0) {
@@ -44,6 +45,23 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       `🔗 <b>Target Post:</b> ${escapeHtml(targetUrl)}\n` +
       `Check if the post has any replies or if replies are restricted.`
     ];
+  }
+
+  // Deduplicate raiders strictly so every member is tagged exactly ONCE
+  const uniqueRaiders = [];
+  const seenIds = new Set();
+  const seenUsernames = new Set();
+
+  for (const r of (raiders || [])) {
+    const id = r.id ? String(r.id) : null;
+    const username = r.username ? r.username.replace(/^@/, '').toLowerCase().trim() : null;
+
+    if (id && seenIds.has(id)) continue;
+    if (username && seenUsernames.has(username)) continue;
+
+    if (id) seenIds.add(id);
+    if (username) seenUsernames.add(username);
+    uniqueRaiders.push(r);
   }
 
   const maxLinksPerMessage = config.MAX_LINKS_PER_MESSAGE || 15;
@@ -60,8 +78,20 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       // First batch header
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
       msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
-      msg += `📊 <b>Direct Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
-      msg += `👇 <b>Target Comments to Raid:</b>\n\n`;
+      msg += `📊 <b>Direct Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n`;
+
+      if (uniqueRaiders.length > 0) {
+        const raiderTags = uniqueRaiders.map(r => {
+          if (r.username) {
+            return `@${r.username.replace(/^@/, '')}`;
+          }
+          const name = r.firstName || r.first_name || 'Raider';
+          return `<a href="tg://user?id=${r.id}">${escapeHtml(name)}</a>`;
+        }).join(' ');
+        msg += `👥 <b>Raiders:</b> ${raiderTags}\n`;
+      }
+
+      msg += `\n👇 <b>Target Comments to Raid:</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
@@ -73,6 +103,7 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       const displayName = comment.authorName || comment.author || 'User';
       const commentUrl = comment.url || `https://x.com/${username}/status/${comment.id}`;
 
+      // Clean comment link without tagging members on comments (tagged once in header)
       msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})\n   <code>${escapeHtml(commentUrl)}</code>\n\n`;
     });
 

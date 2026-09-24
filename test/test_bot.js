@@ -181,22 +181,32 @@ assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting & Direct Comment Links (No Member Tagging)
+// 4. Test: Message Formatting & Direct Comment Links (Tagging Raiders Once in Header)
 // ----------------------------------------------------
-console.log('Test 4: formatRaidMessages (Direct links, No member tagging)');
-const formatted = formatRaidMessages({
+console.log('Test 4: formatRaidMessages (Direct links, Tagging raiders once in header)');
+const testRaiders = [
+  { id: 111, username: 'jacob', firstName: 'Jacob' },
+  { id: 222, username: 'alice', firstName: 'Alice' },
+  { id: 111, username: 'jacob', firstName: 'Jacob' } // Duplicate to test deduplication
+];
+
+const formattedWithRaiders = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sampleMixed
+  sampleResult: sampleMixed,
+  raiders: testRaiders
 });
 
-assert(formatted.length >= 1);
-console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
-assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
-assert(formatted[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
-assert(formatted[0].includes('<code>https://x.com/')); // Direct comment links are included
-assert(!formatted[0].includes('Raider:')); // No member tagging
-assert(!formatted[0].includes('👉 @')); // No member tagging suffix
-console.log('  ✅ Message structure delivers clean numbered comments with direct links without member tagging\n');
+assert(formattedWithRaiders.length >= 1);
+console.log(`  ✅ Formatted into ${formattedWithRaiders.length} chunked messages (respecting Telegram limit)`);
+assert(formattedWithRaiders[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
+assert(formattedWithRaiders[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
+assert(formattedWithRaiders[0].includes('<code>https://x.com/')); // Direct comment links are included
+assert(formattedWithRaiders[0].includes('👥 <b>Raiders:</b> @jacob @alice')); // Tagged once in header
+// Count occurrences of @jacob in first message — should only appear once in header!
+const jacobOccurrences = (formattedWithRaiders[0].match(/@jacob/g) || []).length;
+assert.strictEqual(jacobOccurrences, 1, 'Each raider should only be tagged once in the raid message');
+assert(!formattedWithRaiders[0].includes('👉 @')); // No member tagging suffix on comments
+console.log('  ✅ Raid header tags raiders once, deduplicates, and keeps comment links clean\n');
 
 // ----------------------------------------------------
 // 5. Test: Member Tagging & Welcome Message Construction
@@ -224,7 +234,7 @@ assert.strictEqual(stored[0].username, 'jacob');
 assert.strictEqual(stored[1].firstName, 'Alice');
 console.log('  ✅ Stored members correctly recorded and retrieved');
 
-// Test 5B: Tagging formatting
+// Test 5B: Tagging formatting & Single-Message Tagall
 const tagWithUsername = stored[0].username
   ? `@${stored[0].username}`
   : `<a href="tg://user?id=${stored[0].id}">${escapeHtml(stored[0].firstName)}</a>`;
@@ -234,7 +244,11 @@ const tagWithoutUsername = stored[1].username
   ? `@${stored[1].username}`
   : `<a href="tg://user?id=${stored[1].id}">${escapeHtml(stored[1].firstName)}</a>`;
 assert.strictEqual(tagWithoutUsername, '<a href="tg://user?id=222222">Alice</a>');
-console.log('  ✅ Tag generation works for both @username and profile links');
+
+const singleTagallMsg = `📢 <b>Attention Everyone!</b>\n\n` + [tagWithUsername, tagWithoutUsername].join(' ');
+assert(singleTagallMsg.includes('@jacob'));
+assert(singleTagallMsg.includes('<a href="tg://user?id=222222">Alice</a>'));
+console.log('  ✅ Tag generation and single-message tagall formatting verified');
 
 // Test 5C: Welcome message contents
 const testLink = 'https://t.me/+AbCdEfGhIj';

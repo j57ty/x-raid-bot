@@ -167,7 +167,24 @@ async function getRaidersForChat(ctx) {
     memberMap.set(String(ctx.from.id), ctx.from);
   }
 
-  return Array.from(memberMap.values());
+  // Deduplicate strictly by ID and username so no member appears twice
+  const unique = [];
+  const seenIds = new Set();
+  const seenUsernames = new Set();
+
+  for (const m of memberMap.values()) {
+    const id = m.id ? String(m.id) : null;
+    const username = m.username ? m.username.replace(/^@/, '').toLowerCase().trim() : null;
+
+    if (id && seenIds.has(id)) continue;
+    if (username && seenUsernames.has(username)) continue;
+
+    if (id) seenIds.add(id);
+    if (username) seenUsernames.add(username);
+    unique.push(m);
+  }
+
+  return unique;
 }
 
 /**
@@ -206,7 +223,7 @@ bot.command('raiders', requireGroupAdmin, async (ctx) => {
 
 /**
  * Command: /tagall or /everyone or /mentionall (Admin only)
- * Mentions and tags all known members in the group roster
+ * Mentions and tags all known members in the group roster once in a single message
  */
 bot.command(['tagall', 'everyone', 'mentionall'], requireGroupAdmin, async (ctx) => {
   const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
@@ -231,31 +248,28 @@ bot.command(['tagall', 'everyone', 'mentionall'], requireGroupAdmin, async (ctx)
     return `<a href="tg://user?id=${r.id}">${escapeHtml(name)}</a>`;
   });
 
-  // Chunk mentions (8 per message) to guarantee notifications and avoid Telegram entity limits
-  const CHUNK_SIZE = 8;
-  const chunks = [];
-  for (let i = 0; i < tags.length; i += CHUNK_SIZE) {
-    chunks.push(tags.slice(i, i + CHUNK_SIZE));
-  }
-
   const announcement = customText 
     ? `📢 <b>Announcement:</b> ${escapeHtml(customText)}\n\n`
     : `📢 <b>Attention Everyone!</b>\n\n`;
 
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    let msg = '';
-    if (i === 0) {
-      msg += announcement;
-    }
-    msg += chunk.join(' ');
+  const fullText = announcement + tags.join(' ');
 
-    await safeReply(ctx, msg, {
+  // Tag everyone once in a single message (splits only if exceeding Telegram 4096 character limit)
+  if (fullText.length <= 4000) {
+    await safeReply(ctx, fullText, {
       link_preview_options: { is_disabled: true }
     });
-
-    if (i < chunks.length - 1) {
-      await new Promise(r => setTimeout(r, 600));
+  } else {
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < tags.length; i += CHUNK_SIZE) {
+      const chunk = tags.slice(i, i + CHUNK_SIZE);
+      const msg = (i === 0 ? announcement : '') + chunk.join(' ');
+      await safeReply(ctx, msg, {
+        link_preview_options: { is_disabled: true }
+      });
+      if (i + CHUNK_SIZE < tags.length) {
+        await new Promise(r => setTimeout(r, 500));
+      }
     }
   }
 });
@@ -391,37 +405,47 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     // 2. Select 40% (or requested percent) prioritizing traction comments
     const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
 
-    // 3. Format into chunked raid messages with direct links (no member tags)
+    // 3. Resolve active group raiders (tags everyone once in the raid mission header)
+    const raiders = await getRaidersForChat(ctx);
+
+    // 4. Format into chunked raid messages (tags raiders once in header, clean direct links on comments)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
-      sampleResult
+      sampleResult,
+      raiders
     });
 
-    // 4. Update the initial message with the first batch
+    // 5. Send first raid message (delete pending scanning message so Telegram triggers instant notifications to tagged raiders)
     let firstMsgText = formattedMessages[0];
     if (result.warning) {
       firstMsgText += `\n\n<i>${escapeHtml(result.warning)}</i>`;
     }
 
-    await safeEditMessage(
-      ctx,
-      statusMsg.message_id,
-      firstMsgText,
-      {
-        link_preview_options: { is_disabled: true }
-      }
-    );
+    let raidMsgId = statusMsg.message_id;
 
-    // 5. Pin first raid message if enabled
+    try {
+      await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id);
+      const sent = await safeReply(ctx, firstMsgText, {
+        link_preview_options: { is_disabled: true }
+      });
+      raidMsgId = sent.message_id;
+    } catch (delErr) {
+      // If delete fails, fall back to editing the message in-place
+      await safeEditMessage(ctx, statusMsg.message_id, firstMsgText, {
+        link_preview_options: { is_disabled: true }
+      });
+    }
+
+    // 6. Pin first raid message if enabled
     if (config.PIN_RAID_MESSAGE && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
       try {
-        await ctx.pinChatMessage(statusMsg.message_id);
+        await ctx.pinChatMessage(raidMsgId);
       } catch (pinErr) {
         console.warn('[Raid] Could not pin message (check if bot has pin permissions):', pinErr.message);
       }
     }
 
-    // 6. Send remaining batches if comments exceeded single message limit
+    // 7. Send remaining batches if comments exceeded single message limit
     for (let i = 1; i < formattedMessages.length; i++) {
       await safeReply(ctx, formattedMessages[i], {
         link_preview_options: { is_disabled: true }
@@ -430,11 +454,18 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
 
   } catch (error) {
     console.error('[Raid Error]:', error);
-    await safeEditMessage(
-      ctx,
-      statusMsg.message_id,
-      `❌ <b>Raid Failed:</b> ${escapeHtml(error.message || 'Unknown error occurred.')}`
-    );
+    try {
+      await safeEditMessage(
+        ctx,
+        statusMsg.message_id,
+        `❌ <b>Raid Failed:</b> ${escapeHtml(error.message || 'Unknown error occurred.')}`
+      );
+    } catch (e) {
+      await safeReply(
+        ctx,
+        `❌ <b>Raid Failed:</b> ${escapeHtml(error.message || 'Unknown error occurred.')}`
+      );
+    }
   }
 }
 
