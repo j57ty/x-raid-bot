@@ -344,10 +344,11 @@ async function getTweetComments(tweetId, onProgress = null) {
   // 1. Always prioritize live Third-Party API if key exists (Live real replies, no bans)
   if (config.TWITTERAPI_IO_KEY) {
     try {
-      console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId}...`);
+      const scanTimeoutMs = Math.max(120000, (config.MAX_SCAN_PAGES * 6500) + 30000);
+      console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId} (maxPages: ${config.MAX_SCAN_PAGES}, timeout: ${scanTimeoutMs / 1000}s)...`);
       const results = await withTimeout(
         fetchRepliesViaThirdParty(tweetId, config.MAX_SCAN_PAGES, onProgress),
-        120000,
+        scanTimeoutMs,
         'TwitterAPI.io'
       );
       if (results && results.length > 0) {
