@@ -62,9 +62,8 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       // Header on the first message
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
       msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
-
-      msg += `📊 <b>Comments Found:</b> ${totalComments} | <b>Raid Selection (${samplePercentage}%):</b> ${selectedCount}\n\n`;
-      msg += `👇 <b>Raiders, engage the target comments below:</b>\n\n`;
+      msg += `📊 <b>Comments Found:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>Raiders, find and engage these users in the comments thread:</b>\n\n`;
     } else {
       // Continuation header for subsequent messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
@@ -72,14 +71,14 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
 
     chunk.forEach((comment, idx) => {
       const globalNum = startIndex + idx + 1;
-      const authorText = comment.author ? `@${comment.author}` : 'Comment';
-      const cleanUrl = comment.url || targetUrl;
+      const username = comment.author ? comment.author.replace(/^@/, '') : 'user';
+      const displayName = comment.authorName || comment.author || 'User';
 
-      msg += `${globalNum}. <a href="${escapeHtml(cleanUrl)}">${escapeHtml(authorText)}</a>\n   <code>${escapeHtml(cleanUrl)}</code>\n`;
+      msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})\n`;
     });
 
     if (index === totalBatches - 1) {
-      msg += `\n🔥 <b>Instructions:</b> Click each link, drop likes, and reply to boost visibility!`;
+      msg += `\n🔥 <b>Instructions:</b> Open the target post above, find these users in the comments, and engage!`;
     }
 
     messages.push(msg);

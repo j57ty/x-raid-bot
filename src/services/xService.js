@@ -72,6 +72,7 @@ async function fetchRepliesViaScraper(tweetId, maxResults = 100) {
       }
 
       const username = tweet.username || 'x_user';
+      const authorName = tweet.name || username;
       const likes = Number(tweet.likes) || 0;
       const retweets = Number(tweet.retweets) || 0;
       const replies = Number(tweet.replies) || 0;
@@ -80,6 +81,7 @@ async function fetchRepliesViaScraper(tweetId, maxResults = 100) {
       comments.push({
         id: tweet.id,
         author: username,
+        authorName,
         text: tweet.text || '',
         url: `https://x.com/${username}/status/${tweet.id}`,
         likes,
@@ -166,6 +168,7 @@ async function fetchRepliesViaGraphQL(tweetId) {
           if (tweetResult && tweetResult.legacy) {
             const commentId = tweetResult.legacy.id_str;
             const author = tweetResult.core?.user_results?.result?.legacy?.screen_name || 'user';
+            const authorName = tweetResult.core?.user_results?.result?.legacy?.name || author;
             const inReplyTo = tweetResult.legacy.in_reply_to_status_id_str;
 
             // Exclude nested sub-replies if configured
@@ -182,6 +185,7 @@ async function fetchRepliesViaGraphQL(tweetId) {
               comments.push({
                 id: commentId,
                 author,
+                authorName,
                 text: tweetResult.legacy.full_text || '',
                 url: `https://x.com/${author}/status/${commentId}`,
                 likes,
@@ -237,6 +241,7 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
           }
 
           const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
+          const authorName = tweet.author?.name || tweet.name || author;
           const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
           const likes = Number(tweet.likeCount ?? tweet.likes ?? tweet.favoriteCount ?? tweet.favorite_count ?? 0);
           const retweets = Number(tweet.retweetCount ?? tweet.retweets ?? 0);
@@ -246,6 +251,7 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
           comments.push({
             id: tweet.id,
             author,
+            authorName,
             text: tweet.text || '',
             url: rawUrl.replace('twitter.com', 'x.com'),
             likes,
@@ -303,16 +309,33 @@ async function fetchRepliesViaThirdParty(tweetId, maxPages = config.MAX_SCAN_PAG
  */
 function generateMockComments(tweetId, count = 25) {
   const mockAuthors = [
-    'crypto_raider', 'alpha_hunter', 'web3_degens', 'sol_whale',
-    'eth_maximalist', 'defi_king', 'meme_god', 'nft_flipper',
-    'bullish_trader', 'block_explorer', 'satoshi_fan', 'token_scout',
-    'super_holder', 'airdrop_sniper', 'yield_farmer', 'dao_governor',
-    'laser_eyes', 'meta_builder', 'base_enjoyer', 'hype_machine'
+    { name: 'Crypto Raider', username: 'crypto_raider' },
+    { name: 'Alpha Hunter', username: 'alpha_hunter' },
+    { name: 'Web3 Degens', username: 'web3_degens' },
+    { name: 'Sol Whale', username: 'sol_whale' },
+    { name: 'ETH Maximalist', username: 'eth_maximalist' },
+    { name: 'DeFi King', username: 'defi_king' },
+    { name: 'Meme God', username: 'meme_god' },
+    { name: 'NFT Flipper', username: 'nft_flipper' },
+    { name: 'Bullish Trader', username: 'bullish_trader' },
+    { name: 'Block Explorer', username: 'block_explorer' },
+    { name: 'Satoshi Fan', username: 'satoshi_fan' },
+    { name: 'Token Scout', username: 'token_scout' },
+    { name: 'Super Holder', username: 'super_holder' },
+    { name: 'Airdrop Sniper', username: 'airdrop_sniper' },
+    { name: 'Yield Farmer', username: 'yield_farmer' },
+    { name: 'DAO Governor', username: 'dao_governor' },
+    { name: 'Laser Eyes', username: 'laser_eyes' },
+    { name: 'Meta Builder', username: 'meta_builder' },
+    { name: 'Base Enjoyer', username: 'base_enjoyer' },
+    { name: 'Hype Machine', username: 'hype_machine' }
   ];
 
   const comments = [];
   for (let i = 1; i <= count; i++) {
-    const author = mockAuthors[(i - 1) % mockAuthors.length] + (i > mockAuthors.length ? i : '');
+    const item = mockAuthors[(i - 1) % mockAuthors.length];
+    const author = item.username + (i > mockAuthors.length ? i : '');
+    const authorName = item.name + (i > mockAuthors.length ? ` #${i}` : '');
     const commentId = `${tweetId.slice(0, 10)}${1000 + i}`;
     // Give roughly 60% of mock comments traction, and 40% zero engagement
     const hasTraction = (i % 2 === 0) || (i % 5 === 0);
@@ -325,6 +348,7 @@ function generateMockComments(tweetId, count = 25) {
     comments.push({
       id: commentId,
       author,
+      authorName,
       text: `Mock reply #${i} supporting this post! Let's raid! 🚀`,
       url: `https://x.com/${author}/status/${commentId}`,
       likes,

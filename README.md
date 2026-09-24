@@ -1,6 +1,6 @@
 # ⚔️ Telegram X (Twitter) Raid Bot
 
-A Telegram bot built for raid groups. Given any X (Twitter) post link, it fetches the comments, selects **40% of the comments at random**, and posts direct links to the Telegram group for raiders to work on.
+A Telegram bot built for raid groups. Given any X (Twitter) post link, it fetches the comments, selects **40% of the comments**, and posts the display names and usernames of the target users for raiders to find and engage in the thread.
 
 To protect group operations, **only group administrators** can trigger or use the bot.
 
@@ -8,10 +8,11 @@ To protect group operations, **only group administrators** can trigger or use th
 
 ## 🚀 Features
 
-- **🎯 High-Traction 40% Sampling**: Filters out zero-engagement spam comments first to isolate comments that gained traction (likes, retweets, replies), then samples 40% randomly so raiders distribute engagement across active targets. If all comments have 0 engagement, it gracefully falls back to sampling the full comment pool.
+- **🎯 High-Traction 40% Sampling**: Prioritizes comments that gained traction and fills the remainder to guarantee exactly 40% of comments. Excludes post author comments and nested sub-replies.
+- **👤 Clean User Target Rosters**: Drops the X display name and `@username` of the target users rather than individual comment links, prompting raiders to find them in the thread.
 - **🔒 Admin-Only Protection**: Restricts regular group members from triggering raids. Only group `creator` or `administrator` members can execute bot commands.
 - **🛡️ Ephemeral Warning**: If a non-admin attempts to invoke the bot, an alert is sent and automatically cleaned up after a few seconds to prevent chat clutter.
-- **📦 Smart Chunking & Formatting**: Automatically splits long link lists into formatted batches (max 15 links per message) with link previews suppressed, ensuring the chat stays clean and readable.
+- **📦 Smart Chunking & Formatting**: Automatically splits long target lists into formatted batches (max 15 users per message) with link previews suppressed, ensuring the chat stays clean and readable.
 - **📌 Auto-Pinning (Optional)**: Automatically pins the active raid targets in the group.
 - **🧪 Built-in Test / Simulation Mode**: Test bot permissions and group mechanics immediately even before configuring live X credentials.
 

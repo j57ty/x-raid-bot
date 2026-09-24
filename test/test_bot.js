@@ -182,8 +182,10 @@ const formatted = formatRaidMessages({
 assert(formatted.length >= 1);
 console.log(`  ✅ Formatted into ${formatted.length} chunked messages (respecting Telegram limit)`);
 assert(formatted[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
-assert(formatted[0].includes('https://x.com/'));
-console.log('  ✅ Message structure contains clean links & raid instructions without confusing badges\n');
+assert(formatted[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
+assert(formatted[0].includes('(@')); // Display names & usernames present
+assert(!formatted[0].includes('<code>https://x.com/')); // Direct comment links omitted
+console.log('  ✅ Message structure drops display names and usernames for raiders to find, without comment links\n');
 
 console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
 
