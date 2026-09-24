@@ -115,9 +115,57 @@ function setRaiders(chatId, raiders) {
   saveData(cache);
 }
 
+/**
+ * Bulk adds members by usernames or member objects without clearing existing members.
+ * 
+ * @param {string|number} chatId 
+ * @param {Array<string|Object>} members 
+ * @returns {number} count of added members
+ */
+function addMembers(chatId, members) {
+  if (!chatId || !Array.isArray(members)) return 0;
+  const key = String(chatId);
+  if (!cache[key]) {
+    cache[key] = {};
+  }
+  let added = 0;
+  for (const m of members) {
+    let username = null;
+    let firstName = 'Raider';
+    let id = null;
+
+    if (typeof m === 'string') {
+      const clean = m.replace(/^@/, '').trim();
+      if (clean) {
+        username = clean;
+        firstName = clean;
+        id = `manual_${clean.toLowerCase()}`;
+      }
+    } else if (m && typeof m === 'object') {
+      username = m.username ? m.username.replace(/^@/, '').trim() : null;
+      firstName = m.firstName || m.first_name || username || 'Raider';
+      id = m.id || (username ? `manual_${username.toLowerCase()}` : `manual_${Math.random()}`);
+    }
+
+    if (id) {
+      cache[key][String(id)] = {
+        id,
+        username,
+        firstName,
+        lastName: '',
+        lastSeen: Date.now()
+      };
+      added++;
+    }
+  }
+  saveData(cache);
+  return added;
+}
+
 module.exports = {
   recordMember,
   getMembers,
   clearMembers,
-  setRaiders
+  setRaiders,
+  addMembers
 };

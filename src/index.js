@@ -93,6 +93,7 @@ bot.command(['start', 'help'], async (ctx) => {
     `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (selects 40% of comments by default)\n` +
     `• <code>/raid &lt;X_LINK&gt; &lt;PERCENT&gt;</code> — Raid with custom percentage\n` +
     `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
+    `• <code>/addmembers @user1 @user2</code> — Bulk add members to raid roster (Admin only)\n` +
     `• <code>/raiders</code> — View current active raiders roster (Admin only)\n` +
     `• <code>/join</code> — Register yourself to the raid roster\n` +
     `• <code>/status</code> — View bot operational status\n` +
@@ -154,7 +155,25 @@ async function getRaidersForChat(ctx) {
     console.warn('[Raiders] Could not get chat administrators:', err.message);
   }
 
-  // 2. Add any other members who chatted or registered in this group
+  // 2. Add members defined in GROUP_MEMBERS environment variable (if configured)
+  if (config.GROUP_MEMBERS) {
+    const envHandles = config.GROUP_MEMBERS.match(/@?[a-zA-Z0-9_]{3,32}/g) || [];
+    for (const h of envHandles) {
+      const clean = h.replace(/^@/, '').trim();
+      if (clean) {
+        const id = `env_${clean.toLowerCase()}`;
+        if (!memberMap.has(id)) {
+          memberMap.set(id, {
+            id,
+            username: clean,
+            firstName: clean
+          });
+        }
+      }
+    }
+  }
+
+  // 3. Add any other members who chatted, registered, or were added via /addmembers
   const storedMembers = memberStore.getMembers(chatId);
   for (const m of storedMembers) {
     if (!memberMap.has(String(m.id))) {
@@ -162,7 +181,7 @@ async function getRaidersForChat(ctx) {
     }
   }
 
-  // 3. Fallback to command sender if no other members found
+  // 4. Fallback to command sender if no other members found
   if (memberMap.size === 0 && ctx.from) {
     memberMap.set(String(ctx.from.id), ctx.from);
   }
@@ -186,6 +205,41 @@ async function getRaidersForChat(ctx) {
 
   return unique;
 }
+
+/**
+ * Command: /addmembers @user1 @user2 ... (Admin only)
+ * Bulk adds member handles to the group raid and tag roster
+ */
+bot.command(['addmembers', 'addusers', 'setmembers'], requireGroupAdmin, async (ctx) => {
+  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
+  if (!isGroup) {
+    await safeReply(ctx, '⚠️ This command can only be used inside a group.');
+    return;
+  }
+
+  const rawText = ctx.message.text.split(/\s+/).slice(1).join(' ');
+  const handles = rawText.match(/@?[a-zA-Z0-9_]{3,32}/g) || [];
+
+  if (handles.length === 0) {
+    await safeReply(
+      ctx,
+      `ℹ️ <b>How to bulk add group members:</b>\n\n` +
+      `Send: <code>/addmembers @user1 @user2 @user3 ...</code>\n\n` +
+      `💡 You can paste as many usernames as you want. They will be added to the permanent roster for <code>/tagall</code> and <code>/raid</code>!`
+    );
+    return;
+  }
+
+  const addedCount = memberStore.addMembers(ctx.chat.id, handles);
+  const total = (await getRaidersForChat(ctx)).length;
+
+  await safeReply(
+    ctx,
+    `✅ Successfully added <b>${addedCount}</b> member(s) to the roster!\n\n` +
+    `👥 Total active raiders in group: <b>${total}</b>\n` +
+    `You can now use <code>/tagall</code> or <code>/raiders</code>.`
+  );
+});
 
 /**
  * Command: /join or /register
@@ -521,6 +575,7 @@ async function registerBotCommands() {
     await bot.api.setMyCommands([
       { command: 'raid', description: 'Launch raid on X post (selects 40% comments)' },
       { command: 'tagall', description: 'Tag and notify all group members' },
+      { command: 'addmembers', description: 'Bulk add member handles (@user1 @user2)' },
       { command: 'raiders', description: 'View active raiders in group' },
       { command: 'status', description: 'View bot operational metrics & settings' },
       { command: 'help', description: 'Show raid instructions & guide' }

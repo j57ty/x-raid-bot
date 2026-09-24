@@ -261,7 +261,17 @@ assert(welcomeMsg.includes('Hi @jacob Welcome'));
 assert(welcomeMsg.includes('we are all here to work together as a real community and support each other'));
 assert(welcomeMsg.includes('https://t.me/+AbCdEfGhIj'));
 assert(welcomeMsg.includes("share to those in the Eva Vanguard group who haven't joined in their dms"));
-console.log('  ✅ Welcome message correctly structured with tag, community text, group link, and closing phrase\n');
+console.log('  ✅ Welcome message correctly structured with tag, community text, group link, and closing phrase');
+
+// Test 5D: Bulk add members via addMembers
+const added = memberStore.addMembers(testChatId, ['@charlie', '@dan_crypto']);
+assert.strictEqual(added, 2);
+const membersAfterBulk = memberStore.getMembers(testChatId);
+assert.strictEqual(membersAfterBulk.length, 4);
+const handles = membersAfterBulk.map(m => m.username);
+assert(handles.includes('charlie'));
+assert(handles.includes('dan_crypto'));
+console.log('  ✅ Bulk adding handles via addMembers verified\n');
 
 // Clean up test data
 memberStore.clearMembers(testChatId);

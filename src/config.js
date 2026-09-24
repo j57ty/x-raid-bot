@@ -25,6 +25,7 @@ module.exports = {
   EXCLUDE_NESTED_REPLIES: process.env.EXCLUDE_NESTED_REPLIES !== 'false', // Default true: excludes nested sub-replies
   TARGETS_PER_RAIDER: parseInt(process.env.TARGETS_PER_RAIDER || '4', 10), // Targets assigned per group member (default: 4)
   GROUP_INVITE_LINK: process.env.GROUP_INVITE_LINK || '', // Optional: Group invite link for welcome message
+  GROUP_MEMBERS: process.env.GROUP_MEMBERS || '', // Optional: Permanent roster of handles e.g. @user1, @user2
   
   // Admin & Permission Settings
   // In private chats, allow anyone or only specific telegram user IDs
