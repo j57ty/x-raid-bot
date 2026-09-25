@@ -4,7 +4,7 @@ const { requireGroupAdmin } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
-const { generateReplyAngles } = require('./services/anglesGenerator');
+const { generateReplyAngles, attachVibesToComments } = require('./services/anglesGenerator');
 const memberStore = require('./services/memberStore');
 
 if (!config.TELEGRAM_BOT_TOKEN) {
@@ -460,45 +460,29 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
     // 2. Select 40% (or requested percent) prioritizing traction comments
     const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
 
-    // 3. Resolve active group raiders (tags everyone once in the raid mission header)
-    const raiders = await getRaidersForChat(ctx);
+    // 3. Attach lively, thread-igniting reply vibes per comment (no bot talk)
+    sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
 
-    // 4. Resolve lively & thread-driving suggested reply angles (no bot talk)
-    const angles = generateReplyAngles(customFocus);
-
-    // 5. Format into chunked raid messages (tags raiders once in header, clean direct links on comments, lively angles)
+    // 4. Format into chunked raid messages (clean links with per-comment vibes, NO member tagging)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
-      sampleResult,
-      raiders,
-      angles
+      sampleResult
     });
 
-    // 5. Send first raid message (delete pending scanning message so Telegram triggers instant notifications to tagged raiders)
+    // 5. Update initial scanning message with first batch
     let firstMsgText = formattedMessages[0];
     if (result.warning) {
       firstMsgText += `\n\n<i>${escapeHtml(result.warning)}</i>`;
     }
 
-    let raidMsgId = statusMsg.message_id;
-
-    try {
-      await ctx.api.deleteMessage(ctx.chat.id, statusMsg.message_id);
-      const sent = await safeReply(ctx, firstMsgText, {
-        link_preview_options: { is_disabled: true }
-      });
-      raidMsgId = sent.message_id;
-    } catch (delErr) {
-      // If delete fails, fall back to editing the message in-place
-      await safeEditMessage(ctx, statusMsg.message_id, firstMsgText, {
-        link_preview_options: { is_disabled: true }
-      });
-    }
+    await safeEditMessage(ctx, statusMsg.message_id, firstMsgText, {
+      link_preview_options: { is_disabled: true }
+    });
 
     // 6. Pin first raid message if enabled
     if (config.PIN_RAID_MESSAGE && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup')) {
       try {
-        await ctx.pinChatMessage(raidMsgId);
+        await ctx.pinChatMessage(statusMsg.message_id);
       } catch (pinErr) {
         console.warn('[Raid] Could not pin message (check if bot has pin permissions):', pinErr.message);
       }

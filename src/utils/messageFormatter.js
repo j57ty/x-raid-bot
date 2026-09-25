@@ -28,17 +28,16 @@ function chunkArray(arr, size) {
 
 /**
  * Formats raid comment links into one or more Telegram messages using safe HTML.
- * Drops the direct comment links, tags group raiders once in the mission header,
- * and presents lively, human suggested reply angles to keep threads engaging.
+ * Drops the direct comment links and attaches a lively, thread-igniting reply vibe
+ * directly beside each comment.
+ * Does NOT tag group members (tagging is reserved exclusively for /tagall).
  * 
  * @param {Object} params
  * @param {string} params.targetUrl - Original X post URL
- * @param {Object} params.sampleResult - Output from pickCommentsSample
- * @param {Array<Object>} [params.raiders] - Array of group member objects to tag once in header
- * @param {Array<Object>} [params.angles] - Lively suggested reply angles/hooks
+ * @param {Object} params.sampleResult - Output from pickCommentsSample (with attached replyVibe)
  * @returns {Array<string>} Array of message strings formatted in HTML for Telegram
  */
-function formatRaidMessages({ targetUrl, sampleResult, raiders = [], angles = [] }) {
+function formatRaidMessages({ targetUrl, sampleResult }) {
   const { totalComments, samplePercentage, selectedCount, selectedComments } = sampleResult;
 
   if (selectedComments.length === 0) {
@@ -49,24 +48,8 @@ function formatRaidMessages({ targetUrl, sampleResult, raiders = [], angles = []
     ];
   }
 
-  // Deduplicate raiders strictly so every member is tagged exactly ONCE
-  const uniqueRaiders = [];
-  const seenIds = new Set();
-  const seenUsernames = new Set();
-
-  for (const r of (raiders || [])) {
-    const id = r.id ? String(r.id) : null;
-    const username = r.username ? r.username.replace(/^@/, '').toLowerCase().trim() : null;
-
-    if (id && seenIds.has(id)) continue;
-    if (username && seenUsernames.has(username)) continue;
-
-    if (id) seenIds.add(id);
-    if (username) seenUsernames.add(username);
-    uniqueRaiders.push(r);
-  }
-
-  const maxLinksPerMessage = config.MAX_LINKS_PER_MESSAGE || 15;
+  // 10 comments per message to comfortably fit links + vibes within Telegram's 4096 char limit
+  const maxLinksPerMessage = Math.min(10, config.MAX_LINKS_PER_MESSAGE || 10);
   const batches = chunkArray(selectedComments, maxLinksPerMessage);
   const totalBatches = batches.length;
 
@@ -80,28 +63,8 @@ function formatRaidMessages({ targetUrl, sampleResult, raiders = [], angles = []
       // First batch header
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
       msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
-      msg += `📊 <b>Direct Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n`;
-
-      if (uniqueRaiders.length > 0) {
-        const raiderTags = uniqueRaiders.map(r => {
-          if (r.username) {
-            return `@${r.username.replace(/^@/, '')}`;
-          }
-          const name = r.firstName || r.first_name || 'Raider';
-          return `<a href="tg://user?id=${r.id}">${escapeHtml(name)}</a>`;
-        }).join(' ');
-        msg += `👥 <b>Raiders:</b> ${raiderTags}\n`;
-      }
-
-      // Lively & organic suggested reply angles to keep threads active and non-farmed
-      if (angles && angles.length > 0) {
-        msg += `\n🔥 <b>Suggested Reply Angles (Keep it lively & human — NO bot talk):</b>\n`;
-        angles.forEach(a => {
-          msg += `• <b>${escapeHtml(a.category)}:</b> <i>${escapeHtml(a.example)}</i>\n`;
-        });
-      }
-
-      msg += `\n👇 <b>Target Comments to Raid:</b>\n\n`;
+      msg += `📊 <b>Direct Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>Target Comments to Raid (with Reply Vibes):</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
@@ -113,12 +76,20 @@ function formatRaidMessages({ targetUrl, sampleResult, raiders = [], angles = []
       const displayName = comment.authorName || comment.author || 'User';
       const commentUrl = comment.url || `https://x.com/${username}/status/${comment.id}`;
 
-      // Clean comment link without tagging members on comments (tagged once in header)
-      msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})\n   <code>${escapeHtml(commentUrl)}</code>\n\n`;
+      msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})\n`;
+      msg += `   <code>${escapeHtml(commentUrl)}</code>\n`;
+
+      if (comment.replyVibe) {
+        const label = comment.replyVibe.label || 'Vibe';
+        const text = comment.replyVibe.text || '';
+        msg += `   💬 <b>Reply Vibe:</b> <i>${escapeHtml(label)} — "${escapeHtml(text)}"</i>\n`;
+      }
+
+      msg += `\n`;
     });
 
     if (index === totalBatches - 1) {
-      msg += `🔥 <b>Instructions:</b> Click each comment link above, like, and drop your reply!`;
+      msg += `🔥 <b>Instructions:</b> Click each comment link above, like, and drop your reply matching the vibe!`;
     }
 
     messages.push(msg.trim());

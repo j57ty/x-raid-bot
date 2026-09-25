@@ -9,10 +9,10 @@ To protect group operations, **only group administrators** can trigger or use th
 ## 🚀 Features
 
 - **🎯 High-Traction 40% Sampling**: Prioritizes comments that gained traction and fills the remainder to guarantee exactly 40% of comments. Excludes post author comments and nested sub-replies.
-- **🔥 Lively & Unfarmed Reply Angles**: Suggests 3 rotating, thread-igniting reply hooks with casual, unfiltered language to keep threads alive and ensure comments never look like generic bot spam.
+- **💬 Per-Comment Reply Vibes**: Directly pairs each picked comment with its own distinct, lively reply vibe (spicy call-outs, grills, skepticism, raw hype) so replies keep threads active and never look farmed.
 - **🚫 Nested Sub-Replies Excluded**: Strictly scans only direct top-level comments under the post, skipping all nested conversation threads.
 - **🔗 Direct Comment Links**: Delivers the exact direct link to each comment (`https://x.com/user/status/...`) along with the commenter's name and `@username`.
-- **👥 Single-Ping Raider Roster**: Tags all group members once in the mission header without spamming individual comment items.
+- **🔕 Clean /raid (No Pings)**: `/raid` never tags group members. Member mentions are strictly reserved for the dedicated `/tagall` command.
 - **🔒 Admin-Only Protection**: Restricts regular group members from triggering raids. Only group `creator` or `administrator` members can execute bot commands.
 - **🛡️ Ephemeral Warning**: If a non-admin attempts to invoke the bot, an alert is sent and automatically cleaned up after a few seconds to prevent chat clutter.
 - **📦 Smart Chunking & Formatting**: Automatically splits long target lists into formatted batches with link previews suppressed, ensuring the chat stays clean and readable.

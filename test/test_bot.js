@@ -2,7 +2,7 @@ const assert = require('assert');
 const { parseTweetUrl, generateMockComments, isDirectReply } = require('../src/services/xService');
 const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
-const { generateReplyAngles } = require('../src/services/anglesGenerator');
+const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
 
 console.log('🧪 Starting Automated Tests for X Raid Bot...\n');
@@ -182,32 +182,23 @@ assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
 console.log('  ✅ Random sampling produces distinct shuffled selections\n');
 
 // ----------------------------------------------------
-// 4. Test: Message Formatting & Direct Comment Links (Tagging Raiders Once in Header)
+// 4. Test: Message Formatting & Direct Comment Links (No Member Tagging on /raid)
 // ----------------------------------------------------
-console.log('Test 4: formatRaidMessages (Direct links, Tagging raiders once in header)');
-const testRaiders = [
-  { id: 111, username: 'jacob', firstName: 'Jacob' },
-  { id: 222, username: 'alice', firstName: 'Alice' },
-  { id: 111, username: 'jacob', firstName: 'Jacob' } // Duplicate to test deduplication
-];
+console.log('Test 4: formatRaidMessages (Direct links, No member tagging on /raid)');
 
-const formattedWithRaiders = formatRaidMessages({
+const formattedRaid = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sampleMixed,
-  raiders: testRaiders
+  sampleResult: sampleMixed
 });
 
-assert(formattedWithRaiders.length >= 1);
-console.log(`  ✅ Formatted into ${formattedWithRaiders.length} chunked messages (respecting Telegram limit)`);
-assert(formattedWithRaiders[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
-assert(formattedWithRaiders[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
-assert(formattedWithRaiders[0].includes('<code>https://x.com/')); // Direct comment links are included
-assert(formattedWithRaiders[0].includes('👥 <b>Raiders:</b> @jacob @alice')); // Tagged once in header
-// Count occurrences of @jacob in first message — should only appear once in header!
-const jacobOccurrences = (formattedWithRaiders[0].match(/@jacob/g) || []).length;
-assert.strictEqual(jacobOccurrences, 1, 'Each raider should only be tagged once in the raid message');
-assert(!formattedWithRaiders[0].includes('👉 @')); // No member tagging suffix on comments
-console.log('  ✅ Raid header tags raiders once, deduplicates, and keeps comment links clean\n');
+assert(formattedRaid.length >= 1);
+console.log(`  ✅ Formatted into ${formattedRaid.length} chunked messages (respecting Telegram limit)`);
+assert(formattedRaid[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
+assert(formattedRaid[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
+assert(formattedRaid[0].includes('<code>https://x.com/')); // Direct comment links are included
+assert(!formattedRaid.some(m => m.includes('Raiders:'))); // No raider tags in /raid
+assert(!formattedRaid.some(m => m.includes('👉 @'))); // No member tagging suffix on comments
+console.log('  ✅ /raid message structure delivers clean comment links without tagging members (tagging reserved for /tagall)\n');
 
 // ----------------------------------------------------
 // 5. Test: Member Tagging & Welcome Message Construction
@@ -275,38 +266,49 @@ assert(handles.includes('dan_crypto'));
 console.log('  ✅ Bulk adding handles via addMembers verified\n');
 
 // ----------------------------------------------------
-// 6. Test: Reply Angles Generation & Formatting
+// 6. Test: Per-Comment Reply Vibes & /raid Formatting
 // ----------------------------------------------------
-console.log('Test 6: Reply Angles Generation & Raid Integration');
+console.log('Test 6: Per-Comment Reply Vibes & /raid Formatting');
 
-// Test 6A: Default random angles (3 diverse lively angles)
-const defaultAngles = generateReplyAngles();
-assert.strictEqual(defaultAngles.length, 3);
-for (const a of defaultAngles) {
-  assert(a.category && a.category.length > 0);
-  assert(a.example && a.example.length > 0);
+// Test 6A: Sample angles preview for /angles
+const sampleAngles = generateReplyAngles();
+assert.strictEqual(sampleAngles.length, 3);
+for (const a of sampleAngles) {
+  assert(a.label && a.label.length > 0);
+  assert(a.text && a.text.length > 0);
 }
-console.log('  ✅ Default angles generation: produced 3 lively, thread-igniting reply hooks');
+console.log('  ✅ Preview angles: produced 3 lively sample reply hooks');
 
-// Test 6B: Custom focus angles
-const customAngles = generateReplyAngles('gas fees and scaling');
-assert.strictEqual(customAngles.length, 3);
-assert.strictEqual(customAngles[0].category, '🎯 Mission Focus');
-assert(customAngles[0].example.includes('gas fees and scaling'));
-console.log('  ✅ Custom focus angles: targeted mission focus hook generated correctly');
+// Test 6B: attachVibesToComments attaches a vibe to every comment
+const sampleWithVibes = attachVibesToComments(sampleMixed.selectedComments);
+assert.strictEqual(sampleWithVibes.length, sampleMixed.selectedComments.length);
+for (const c of sampleWithVibes) {
+  assert(c.replyVibe, 'Each comment must have a replyVibe attached');
+  assert(c.replyVibe.label && c.replyVibe.label.length > 0);
+  assert(c.replyVibe.text && c.replyVibe.text.length > 0);
+}
+console.log('  ✅ attachVibesToComments: attached a distinct lively vibe to each comment');
 
-// Test 6C: Message formatting includes reply angles in first raid message
-const formattedWithAngles = formatRaidMessages({
+// Test 6C: Message formatting renders Reply Vibe beside each comment
+const formattedWithVibes = formatRaidMessages({
   targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
-  sampleResult: sampleMixed,
-  raiders: testRaiders,
-  angles: defaultAngles
+  sampleResult: {
+    ...sampleMixed,
+    selectedComments: sampleWithVibes
+  }
 });
-assert(formattedWithAngles[0].includes('Suggested Reply Angles'));
-assert(formattedWithAngles[0].includes(defaultAngles[0].category));
-assert(formattedWithAngles[0].includes(defaultAngles[1].category));
-assert(formattedWithAngles[0].includes(defaultAngles[2].category));
-console.log('  ✅ Raid message header renders suggested reply angles cleanly\n');
+
+assert(formattedWithVibes[0].includes('💬 <b>Reply Vibe:</b>'));
+assert(!formattedWithVibes.some(m => m.includes('Raiders:'))); // Strictly NO member tagging on /raid
+assert(!formattedWithVibes.some(m => m.includes('👉 @'))); // No member tags
+console.log('  ✅ /raid message structure renders Reply Vibe beside each comment with NO member tagging');
+
+// Test 6D: Custom focus integrates mission focus into comments
+const customWithVibes = attachVibesToComments(sampleMixed.selectedComments, 'gas fees and scaling');
+const focusComments = customWithVibes.filter(c => c.replyVibe.label === 'Mission Focus');
+assert(focusComments.length > 0);
+assert(focusComments[0].replyVibe.text.includes('gas fees and scaling'));
+console.log('  ✅ Custom focus: successfully integrated mission focus vibe into comment list\n');
 
 // Clean up test data
 memberStore.clearMembers(testChatId);
