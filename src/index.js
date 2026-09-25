@@ -1,6 +1,6 @@
 const { Bot } = require('grammy');
 const config = require('./config');
-const { requireGroupAdmin } = require('./middleware/adminCheck');
+const { requireGroupAdmin, enforceAdminOnlyMiddleware } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments, getTweetInfo } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
@@ -15,13 +15,16 @@ if (!config.TELEGRAM_BOT_TOKEN) {
 
 const bot = new Bot(config.TELEGRAM_BOT_TOKEN);
 
-// Automatically record active group members when they chat
+// 1. Automatically record active group members when they chat
 bot.use(async (ctx, next) => {
   if (ctx.chat && (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') && ctx.from && !ctx.from.is_bot) {
     memberStore.recordMember(ctx.chat.id, ctx.from);
   }
   return next();
 });
+
+// 2. Strict Admin-Only Gate: Blocks any non-admin who tags, replies to, or sends commands to the bot
+bot.use(enforceAdminOnlyMiddleware);
 
 // Global Error Handler
 bot.catch((err) => {
@@ -70,34 +73,21 @@ async function safeReply(ctx, text, options = {}) {
 /**
  * Command: /start or /help
  */
-bot.command(['start', 'help'], async (ctx) => {
-  const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-
-  if (isGroup) {
-    try {
-      const member = await ctx.getChatMember(ctx.from.id);
-      const isAdmin = member.status === 'creator' || member.status === 'administrator';
-      if (!isAdmin) {
-        return; // Silently ignore non-admins for /start in groups
-      }
-    } catch (e) {
-      // Ignore
-    }
-  }
-
+bot.command(['start', 'help'], requireGroupAdmin, async (ctx) => {
   const welcomeMessage = 
     `🤖 <b>X Raid Telegram Bot</b>\n\n` +
-    `This bot extracts comments from any X (Twitter) post, selects <b>40% of the comments randomly</b>, ` +
-    `and delivers direct links to the group for raiders to work on.\n\n` +
-    `🔒 <b>Security:</b> Only group administrators can trigger raids.\n\n` +
-    `📌 <b>Commands:</b>\n` +
+    `This bot extracts comments from any X (Twitter) post or comment, selects <b>40% of the comments randomly</b>, ` +
+    `and delivers direct links to the group with actionable reply vibes for raiders to execute.\n\n` +
+    `🔒 <b>Security:</b> Only group administrators are permitted to tag or trigger this bot.\n\n` +
+    `📌 <b>Admin Commands:</b>\n` +
     `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (selects 40% of comments by default)\n` +
     `• <code>/raid &lt;X_LINK&gt; &lt;PERCENT&gt;</code> — Raid with custom percentage\n` +
+    `• <code>/raid &lt;X_LINK&gt; focus: your theme</code> — Raid with custom mission focus\n` +
+    `• <code>/angles [custom focus]</code> — Preview lively suggested reply vibes\n` +
     `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
     `• <code>/addmembers @user1 @user2</code> — Bulk add members to raid roster (Admin only)\n` +
     `• <code>/raiders</code> — View current active raiders roster (Admin only)\n` +
-    `• <code>/join</code> — Register yourself to the raid roster\n` +
-    `• <code>/status</code> — View bot operational status\n` +
+    `• <code>/status</code> — View bot operational metrics & settings\n` +
     `• <code>/help</code> — Display this instructions menu\n\n` +
     `💡 <b>Example:</b>\n` +
     `<code>/raid https://x.com/elonmusk/status/1890000000000000000</code>`;
@@ -246,7 +236,7 @@ bot.command(['addmembers', 'addusers', 'setmembers'], requireGroupAdmin, async (
  * Command: /join or /register
  * Group members can voluntarily register themselves into the raid roster
  */
-bot.command(['join', 'register'], async (ctx) => {
+bot.command(['join', 'register'], requireGroupAdmin, async (ctx) => {
   const isGroup = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
   if (!isGroup) {
     await safeReply(ctx, 'ℹ️ Use <code>/join</code> inside your Telegram raid group to join the roster.');
@@ -631,15 +621,13 @@ bot.command(['angles', 'replyangles'], requireGroupAdmin, async (ctx) => {
  */
 async function registerBotCommands() {
   try {
-    // Default menu (for regular members)
-    await bot.api.setMyCommands([
-      { command: 'help', description: 'Show bot usage instructions' }
-    ], { scope: { type: 'default' } });
+    // Default menu (for regular members: empty so commands do not auto-suggest to non-admins)
+    await bot.api.setMyCommands([], { scope: { type: 'default' } });
 
     // Admin menu (only visible to administrators in groups)
     await bot.api.setMyCommands([
-      { command: 'raid', description: 'Launch raid on X post (selects 40% comments)' },
-      { command: 'angles', description: 'Preview lively suggested reply angles' },
+      { command: 'raid', description: 'Launch raid on X post or comment' },
+      { command: 'angles', description: 'Preview lively suggested reply vibes' },
       { command: 'tagall', description: 'Tag and notify all group members' },
       { command: 'addmembers', description: 'Bulk add member handles (@user1 @user2)' },
       { command: 'raiders', description: 'View active raiders in group' },

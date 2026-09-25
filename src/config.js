@@ -33,8 +33,11 @@ module.exports = {
     ? process.env.ALLOWED_PRIVATE_USERS.split(',').map(id => id.trim()) 
     : [],
   
+  // Telegram Bot Username (optional fallback, auto-detected from botInfo)
+  BOT_USERNAME: process.env.BOT_USERNAME || '',
+
   // Delete non-admin warning message after seconds (0 to keep)
-  DELETE_WARNING_AFTER_SECONDS: parseInt(process.env.DELETE_WARNING_AFTER_SECONDS || '8', 10),
+  DELETE_WARNING_AFTER_SECONDS: parseInt(process.env.DELETE_WARNING_AFTER_SECONDS || '5', 10),
 
   // Pin raid message in group
   PIN_RAID_MESSAGE: process.env.PIN_RAID_MESSAGE === 'true',

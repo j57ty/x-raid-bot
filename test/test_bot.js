@@ -4,6 +4,7 @@ const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
+const { isUserAdmin, isMessageDirectedAtBot, enforceAdminOnlyMiddleware, requireGroupAdmin } = require('../src/middleware/adminCheck');
 
 console.log('🧪 Starting Automated Tests for X Raid Bot...\n');
 
@@ -359,7 +360,130 @@ assert(commentWithSubReplies[0].includes('@sub_user1'));
 assert(commentWithSubReplies[0].includes('Be sarcastic'));
 console.log('  ✅ Comment raid with sub-replies: renders target comment vibe + sub-thread comment vibes cleanly\n');
 
-// Clean up test data
-memberStore.clearMembers(testChatId);
+// ----------------------------------------------------
+// 8. Test: Admin-Only Mentions & Command Protection
+// ----------------------------------------------------
+console.log('Test 8: Admin-Only Mentions & Command Protection');
 
-console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
+// Mock context factory
+function createMockCtx({
+  chatType = 'supergroup',
+  chatId = -1001234567,
+  userId = 12345,
+  username = 'testuser',
+  status = 'member',
+  text = '',
+  entities = [],
+  replyToBot = false,
+  botUsername = 'x_raid_bot',
+  botId = 99999
+} = {}) {
+  const deletedMessageIds = [];
+  const repliedTexts = [];
+
+  const ctx = {
+    chat: { id: chatId, type: chatType },
+    from: { id: userId, username, first_name: username, is_bot: false },
+    me: { id: botId, username: botUsername, is_bot: true },
+    message: {
+      message_id: 8888,
+      text,
+      entities,
+      reply_to_message: replyToBot ? {
+        message_id: 7777,
+        from: { id: botId, username: botUsername, is_bot: true }
+      } : undefined
+    },
+    api: {
+      deleteMessage: async (cId, mId) => {
+        deletedMessageIds.push({ cId, mId });
+        return true;
+      }
+    },
+    getChatMember: async (uId) => {
+      return { user: { id: uId }, status };
+    },
+    reply: async (msgText) => {
+      repliedTexts.push(msgText);
+      return { message_id: 9991, text: msgText };
+    }
+  };
+
+  return { ctx, deletedMessageIds, repliedTexts };
+}
+
+// Test 8A: isMessageDirectedAtBot detection
+const ctxTag = createMockCtx({ text: 'Hey @x_raid_bot start a raid!' }).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxTag), true);
+
+const ctxEntityMention = createMockCtx({
+  text: '@x_raid_bot /raid https://x.com/test',
+  entities: [{ type: 'mention', offset: 0, length: 11 }]
+}).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxEntityMention), true);
+
+const ctxCommand = createMockCtx({
+  text: '/raid https://x.com/test',
+  entities: [{ type: 'bot_command', offset: 0, length: 5 }]
+}).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxCommand), true);
+
+const ctxReply = createMockCtx({ text: 'check this out', replyToBot: true }).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxReply), true);
+
+// Negative cases: normal chatter between group members
+const ctxNormalChat = createMockCtx({ text: 'Good morning guys! Let us win today' }).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxNormalChat), false);
+
+const ctxOtherTag = createMockCtx({
+  text: 'Hey @crypto_friend did you see the post?',
+  entities: [{ type: 'mention', offset: 4, length: 14 }]
+}).ctx;
+assert.strictEqual(isMessageDirectedAtBot(ctxOtherTag), false);
+console.log('  ✅ isMessageDirectedAtBot correctly identifies bot tags, commands, and replies vs normal chat');
+
+// Test 8B: isUserAdmin permission verification
+(async () => {
+  const adminCtx = createMockCtx({ status: 'administrator' }).ctx;
+  const creatorCtx = createMockCtx({ status: 'creator' }).ctx;
+  const memberCtx = createMockCtx({ status: 'member' }).ctx;
+
+  assert.strictEqual(await isUserAdmin(adminCtx), true);
+  assert.strictEqual(await isUserAdmin(creatorCtx), true);
+  assert.strictEqual(await isUserAdmin(memberCtx), false);
+  console.log('  ✅ isUserAdmin: verified creator/administrator allowed, regular member disallowed');
+
+  // Test 8C: enforceAdminOnlyMiddleware blocks non-admins and deletes their message
+  const nonAdminMock = createMockCtx({
+    status: 'member',
+    text: '@x_raid_bot raid this https://x.com/test'
+  });
+  let nextCalledNonAdmin = false;
+  await enforceAdminOnlyMiddleware(nonAdminMock.ctx, async () => { nextCalledNonAdmin = true; });
+
+  assert.strictEqual(nextCalledNonAdmin, false, 'Middleware must NOT call next() for non-admin');
+  assert.strictEqual(nonAdminMock.deletedMessageIds.length, 1, 'Non-admin trigger message must be deleted');
+  assert.strictEqual(nonAdminMock.deletedMessageIds[0].mId, 8888);
+  assert.strictEqual(nonAdminMock.repliedTexts.length, 1);
+  assert(nonAdminMock.repliedTexts[0].includes('Admin Only'), 'Warning notice must be sent to non-admin');
+  console.log('  ✅ Non-admin tagging bot: trigger message immediately deleted and auto-deleting warning sent');
+
+  // Test 8D: enforceAdminOnlyMiddleware allows admins to proceed
+  const adminMock = createMockCtx({
+    status: 'administrator',
+    text: '/raid https://x.com/test',
+    entities: [{ type: 'bot_command', offset: 0, length: 5 }]
+  });
+  let nextCalledAdmin = false;
+  await enforceAdminOnlyMiddleware(adminMock.ctx, async () => { nextCalledAdmin = true; });
+
+  assert.strictEqual(nextCalledAdmin, true, 'Middleware MUST call next() for administrator');
+  assert.strictEqual(adminMock.deletedMessageIds.length, 0, 'Admin message must NOT be deleted');
+  assert.strictEqual(adminMock.repliedTexts.length, 0, 'Admin must NOT receive a warning');
+  console.log('  ✅ Administrator using bot: permitted to proceed without interception\n');
+
+  // Clean up test data
+  memberStore.clearMembers(testChatId);
+
+  console.log('🎉 ALL TESTS PASSED SUCCESSFULLY! Everything is working as expected.');
+})();
