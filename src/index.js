@@ -4,6 +4,7 @@ const { requireGroupAdmin } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
+const { generateReplyAngles } = require('./services/anglesGenerator');
 const memberStore = require('./services/memberStore');
 
 if (!config.TELEGRAM_BOT_TOKEN) {
@@ -382,7 +383,7 @@ bot.on('message:new_chat_members', async (ctx) => {
 /**
  * Core Handler for initiating a raid
  */
-async function handleRaidExecution(ctx, inputUrl, inputPercent) {
+async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = null) {
   const parsed = parseTweetUrl(inputUrl);
   if (!parsed) {
     await safeReply(
@@ -462,11 +463,15 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
     // 3. Resolve active group raiders (tags everyone once in the raid mission header)
     const raiders = await getRaidersForChat(ctx);
 
-    // 4. Format into chunked raid messages (tags raiders once in header, clean direct links on comments)
+    // 4. Resolve lively & thread-driving suggested reply angles (no bot talk)
+    const angles = generateReplyAngles(customFocus);
+
+    // 5. Format into chunked raid messages (tags raiders once in header, clean direct links on comments, lively angles)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
       sampleResult,
-      raiders
+      raiders,
+      angles
     });
 
     // 5. Send first raid message (delete pending scanning message so Telegram triggers instant notifications to tagged raiders)
@@ -524,23 +529,58 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent) {
 }
 
 /**
- * Command: /raid <URL> [PERCENTAGE]
+ * Command: /raid <URL> [PERCENTAGE] [focus: YOUR THEME]
  * Protected by requireGroupAdmin middleware
  */
 bot.command('raid', requireGroupAdmin, async (ctx) => {
-  const args = ctx.message.text.split(/\s+/).slice(1);
-  let inputUrl = args[0];
-  let inputPercent = args[1] ? parseInt(args[1], 10) : null;
+  const fullText = (ctx.message.text || '').trim();
+  const rawArgs = fullText.split(/\s+/).slice(1);
+  let inputUrl = null;
+  let inputPercent = null;
+  let customFocus = null;
 
-  // Check if user replied to another message containing an X link
-  if (!inputUrl && ctx.message?.reply_to_message?.text) {
+  // 1. Check if first argument is a valid X URL
+  if (rawArgs[0] && parseTweetUrl(rawArgs[0])) {
+    inputUrl = rawArgs[0];
+    const remaining = rawArgs.slice(1).join(' ').trim();
+    if (remaining) {
+      const percentMatch = remaining.match(/^(\d{1,3})(?:\s+focus:\s*|\s+theme:\s*|\s+)(.*)$/i);
+      const simplePercentMatch = remaining.match(/^(\d{1,3})$/);
+      const focusMatch = remaining.match(/(?:focus|theme):\s*(.*)$/i);
+
+      if (simplePercentMatch) {
+        inputPercent = parseInt(simplePercentMatch[1], 10);
+      } else if (percentMatch) {
+        inputPercent = parseInt(percentMatch[1], 10);
+        if (percentMatch[2]) customFocus = percentMatch[2].trim();
+      } else if (focusMatch) {
+        customFocus = focusMatch[1].trim();
+      } else {
+        customFocus = remaining;
+      }
+    }
+  } else if (ctx.message?.reply_to_message?.text) {
+    // 2. Reply to another message containing an X URL
     const replyText = ctx.message.reply_to_message.text;
     const match = replyText.match(/https?:\/\/(?:twitter\.com|x\.com)\/[a-zA-Z0-9_]+\/status(?:es)?\/\d+[^\s]*/i);
     if (match) {
       inputUrl = match[0];
-      // If an argument was provided (like /raid 50), treat it as percentage
-      if (args[0] && !isNaN(parseInt(args[0], 10))) {
-        inputPercent = parseInt(args[0], 10);
+      const remaining = rawArgs.join(' ').trim();
+      if (remaining) {
+        const simplePercentMatch = remaining.match(/^(\d{1,3})$/);
+        const percentWithFocusMatch = remaining.match(/^(\d{1,3})\s+(?:focus:\s*|theme:\s*|)(.*)$/i);
+        const focusMatch = remaining.match(/(?:focus|theme):\s*(.*)$/i);
+
+        if (simplePercentMatch) {
+          inputPercent = parseInt(simplePercentMatch[1], 10);
+        } else if (percentWithFocusMatch) {
+          inputPercent = parseInt(percentWithFocusMatch[1], 10);
+          if (percentWithFocusMatch[2]) customFocus = percentWithFocusMatch[2].trim();
+        } else if (focusMatch) {
+          customFocus = focusMatch[1].trim();
+        } else {
+          customFocus = remaining;
+        }
       }
     }
   }
@@ -551,18 +591,37 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       `**Method 1:** Send with URL:\n` +
       `\`/raid https://x.com/username/status/1890000000000000000\`\n\n` +
       `**Method 2:** Reply to any message containing an X link with \`/raid\`!\n\n` +
-      `**Optional:** Add percentage at the end (e.g. \`/raid <url> 50\`, defaults to 40%).`,
+      `**Optional custom percentage:** \`/raid <url> 50\` (defaults to 40%)\n` +
+      `**Optional custom focus:** \`/raid <url> focus: challenge them on gas fees\`\n` +
+      `**Combined:** \`/raid <url> 50 focus: ask when mainnet drops\``,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  await handleRaidExecution(ctx, inputUrl, inputPercent);
+  await handleRaidExecution(ctx, inputUrl, inputPercent, customFocus);
+});
+
+/**
+ * Command: /angles [custom focus] (Admin only)
+ * Preview lively suggested reply angles (no bot talk)
+ */
+bot.command(['angles', 'replyangles'], requireGroupAdmin, async (ctx) => {
+  const customFocus = ctx.message.text.split(/\s+/).slice(1).join(' ').trim();
+  const angles = generateReplyAngles(customFocus || null);
+
+  let msg = `🔥 <b>Lively Suggested Reply Angles</b> (Keep threads moving — NO bot talk):\n\n`;
+  angles.forEach(a => {
+    msg += `• <b>${escapeHtml(a.category)}:</b>\n  <i>${escapeHtml(a.example)}</i>\n\n`;
+  });
+  msg += `💡 <i>Angles rotate on every raid to keep your comment sections sounding 100% human and organic.</i>`;
+
+  await safeReply(ctx, msg);
 });
 
 /**
  * Register Telegram command popup menus
- * (Admins get /raid, /status, /help; regular members only see /help)
+ * (Admins get /raid, /angles, /status, /help; regular members only see /help)
  */
 async function registerBotCommands() {
   try {
@@ -574,6 +633,7 @@ async function registerBotCommands() {
     // Admin menu (only visible to administrators in groups)
     await bot.api.setMyCommands([
       { command: 'raid', description: 'Launch raid on X post (selects 40% comments)' },
+      { command: 'angles', description: 'Preview lively suggested reply angles' },
       { command: 'tagall', description: 'Tag and notify all group members' },
       { command: 'addmembers', description: 'Bulk add member handles (@user1 @user2)' },
       { command: 'raiders', description: 'View active raiders in group' },

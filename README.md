@@ -9,8 +9,10 @@ To protect group operations, **only group administrators** can trigger or use th
 ## 🚀 Features
 
 - **🎯 High-Traction 40% Sampling**: Prioritizes comments that gained traction and fills the remainder to guarantee exactly 40% of comments. Excludes post author comments and nested sub-replies.
+- **🔥 Lively & Unfarmed Reply Angles**: Suggests 3 rotating, thread-igniting reply hooks with casual, unfiltered language to keep threads alive and ensure comments never look like generic bot spam.
 - **🚫 Nested Sub-Replies Excluded**: Strictly scans only direct top-level comments under the post, skipping all nested conversation threads.
 - **🔗 Direct Comment Links**: Delivers the exact direct link to each comment (`https://x.com/user/status/...`) along with the commenter's name and `@username`.
+- **👥 Single-Ping Raider Roster**: Tags all group members once in the mission header without spamming individual comment items.
 - **🔒 Admin-Only Protection**: Restricts regular group members from triggering raids. Only group `creator` or `administrator` members can execute bot commands.
 - **🛡️ Ephemeral Warning**: If a non-admin attempts to invoke the bot, an alert is sent and automatically cleaned up after a few seconds to prevent chat clutter.
 - **📦 Smart Chunking & Formatting**: Automatically splits long target lists into formatted batches with link previews suppressed, ensuring the chat stays clean and readable.
@@ -125,14 +127,32 @@ Render's free tier sleeps after 15 minutes of inactivity. Our bot includes an in
 
 In your Telegram group (as an admin):
 
-### Standard Raid (40% of comments)
+### Standard Raid (40% of comments with rotating reply angles)
 ```
 /raid https://x.com/username/status/1890000000000000000
 ```
 
-### Custom Percentage Raid
+### Custom Focus & Percentage Raid
 ```
-/raid https://x.com/username/status/1890000000000000000 50
+/raid https://x.com/username/status/1890000000000000000 focus: challenge them on gas fees
+/raid https://x.com/username/status/1890000000000000000 50 focus: ask when mainnet drops
+```
+
+### Preview Reply Angles
+```
+/angles
+/angles focus: token launch
+```
+
+### Notify & Tag Entire Roster
+```
+/tagall
+/tagall New raid incoming!
+```
+
+### Bulk Add Members to Permanent Roster
+```
+/addmembers @user1 @user2 @user3
 ```
 
 ### Bot Status

@@ -28,15 +28,17 @@ function chunkArray(arr, size) {
 
 /**
  * Formats raid comment links into one or more Telegram messages using safe HTML.
- * Drops the direct comment links and tags group raiders once in the mission header.
+ * Drops the direct comment links, tags group raiders once in the mission header,
+ * and presents lively, human suggested reply angles to keep threads engaging.
  * 
  * @param {Object} params
  * @param {string} params.targetUrl - Original X post URL
  * @param {Object} params.sampleResult - Output from pickCommentsSample
  * @param {Array<Object>} [params.raiders] - Array of group member objects to tag once in header
+ * @param {Array<Object>} [params.angles] - Lively suggested reply angles/hooks
  * @returns {Array<string>} Array of message strings formatted in HTML for Telegram
  */
-function formatRaidMessages({ targetUrl, sampleResult, raiders = [] }) {
+function formatRaidMessages({ targetUrl, sampleResult, raiders = [], angles = [] }) {
   const { totalComments, samplePercentage, selectedCount, selectedComments } = sampleResult;
 
   if (selectedComments.length === 0) {
@@ -89,6 +91,14 @@ function formatRaidMessages({ targetUrl, sampleResult, raiders = [] }) {
           return `<a href="tg://user?id=${r.id}">${escapeHtml(name)}</a>`;
         }).join(' ');
         msg += `👥 <b>Raiders:</b> ${raiderTags}\n`;
+      }
+
+      // Lively & organic suggested reply angles to keep threads active and non-farmed
+      if (angles && angles.length > 0) {
+        msg += `\n🔥 <b>Suggested Reply Angles (Keep it lively & human — NO bot talk):</b>\n`;
+        angles.forEach(a => {
+          msg += `• <b>${escapeHtml(a.category)}:</b> <i>${escapeHtml(a.example)}</i>\n`;
+        });
       }
 
       msg += `\n👇 <b>Target Comments to Raid:</b>\n\n`;

@@ -2,6 +2,7 @@ const assert = require('assert');
 const { parseTweetUrl, generateMockComments, isDirectReply } = require('../src/services/xService');
 const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
+const { generateReplyAngles } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
 
 console.log('🧪 Starting Automated Tests for X Raid Bot...\n');
@@ -272,6 +273,40 @@ const handles = membersAfterBulk.map(m => m.username);
 assert(handles.includes('charlie'));
 assert(handles.includes('dan_crypto'));
 console.log('  ✅ Bulk adding handles via addMembers verified\n');
+
+// ----------------------------------------------------
+// 6. Test: Reply Angles Generation & Formatting
+// ----------------------------------------------------
+console.log('Test 6: Reply Angles Generation & Raid Integration');
+
+// Test 6A: Default random angles (3 diverse lively angles)
+const defaultAngles = generateReplyAngles();
+assert.strictEqual(defaultAngles.length, 3);
+for (const a of defaultAngles) {
+  assert(a.category && a.category.length > 0);
+  assert(a.example && a.example.length > 0);
+}
+console.log('  ✅ Default angles generation: produced 3 lively, thread-igniting reply hooks');
+
+// Test 6B: Custom focus angles
+const customAngles = generateReplyAngles('gas fees and scaling');
+assert.strictEqual(customAngles.length, 3);
+assert.strictEqual(customAngles[0].category, '🎯 Mission Focus');
+assert(customAngles[0].example.includes('gas fees and scaling'));
+console.log('  ✅ Custom focus angles: targeted mission focus hook generated correctly');
+
+// Test 6C: Message formatting includes reply angles in first raid message
+const formattedWithAngles = formatRaidMessages({
+  targetUrl: 'https://x.com/elonmusk/status/1890000000000000000',
+  sampleResult: sampleMixed,
+  raiders: testRaiders,
+  angles: defaultAngles
+});
+assert(formattedWithAngles[0].includes('Suggested Reply Angles'));
+assert(formattedWithAngles[0].includes(defaultAngles[0].category));
+assert(formattedWithAngles[0].includes(defaultAngles[1].category));
+assert(formattedWithAngles[0].includes(defaultAngles[2].category));
+console.log('  ✅ Raid message header renders suggested reply angles cleanly\n');
 
 // Clean up test data
 memberStore.clearMembers(testChatId);
