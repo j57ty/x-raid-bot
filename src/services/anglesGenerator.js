@@ -1,59 +1,26 @@
 /**
  * Angles & Reply Vibes Generator Service
- * Generates lively, human, and thread-igniting reply hooks with casual/spicy degen language.
- * Ensures raid comments don't sound like farmed/botted comment sections and keeps conversations going.
+ * Assigns direct, actionable reply vibes to each comment so raiders know exactly how
+ * to frame their replies (e.g., "try contradicting or asking questions", "be sarcastic").
+ * Keeps threads lively, human, and avoids farmed-looking comment sections.
  */
 
-// Full pool of lively, thread-igniting reply vibes
-const ALL_VIBES = [
-  {
-    label: 'Call-Out / Doubt',
-    text: 'ngl sounds wild as hell, but what happens when volume dumps? ain\'t no way this sustains without liquidity'
-  },
-  {
-    label: 'Real Grill / Risk',
-    text: 'looks almost too good... where\'s the damn catch? what\'s the biggest risk you guys are sweating right now?'
-  },
-  {
-    label: 'Normie UX Test',
-    text: 'wtf is the onboarding like for normies? if it takes more than 2 clicks, nobody\'s gonna use it'
-  },
-  {
-    label: 'Unfiltered Hype',
-    text: 'holy shit, was ready to call bullshit on this, but damn that concept is actually clean. when does this drop?'
-  },
-  {
-    label: 'Timeline Grill',
-    text: 'no fucking way this ships on schedule. we\'ve seen this movie before, what\'s the actual backup plan?'
-  },
-  {
-    label: 'Token Utility Grill',
-    text: 'sick tech, but where does the actual value accrue? don\'t tell me it\'s just governance bullshit'
-  },
-  {
-    label: 'Competitor Challenge',
-    text: 'alright this is cool, but how does this not get completely eaten alive once giants copy it?'
-  },
-  {
-    label: 'Hidden Flaw Check',
-    text: 'damn, everyone\'s hyping this up but nobody\'s talking about the gas fees / slippage. how are you solving that?'
-  },
-  {
-    label: 'High Conviction',
-    text: 'damn, if this actually works in the wild the way you say, it\'s gonna shake up the whole space. LFG'
-  },
-  {
-    label: 'Street Wisdom',
-    text: 'been in this trenches long enough to see 99% of ideas fail, but this might actually be onto something badass'
-  },
-  {
-    label: 'Proof & Receipts',
-    text: 'sounds dope on paper, but who the fuck is actually testing this in production right now?'
-  },
-  {
-    label: 'Impatient Degen',
-    text: 'fuck the talk, when does this actually drop for the public? don\'t leave us hanging'
-  }
+const ACTIONABLE_VIBES = [
+  'Try contradicting or asking questions',
+  'Support without repeating the same thing',
+  'Be sarcastic',
+  'Try answering the question',
+  'Play devil\'s advocate',
+  'Call out the hype with humor',
+  'Agree, but point out a potential flaw',
+  'Challenge them to show proof or numbers',
+  'Ask a genuine question that forces them to reply',
+  'Share a skeptical take or personal doubt',
+  'Drop a witty one-liner or tease them',
+  'Relate it to real-world experience or past lessons',
+  'Hype them up with your own original spin',
+  'Ask what the catch or downside is',
+  'Compare to competitors with a sharp take'
 ];
 
 /**
@@ -69,13 +36,13 @@ function shuffle(arr) {
 }
 
 /**
- * Assigns a distinct, lively reply vibe/angle to each comment.
- * If customFocus is provided by admin, every few comments will target that focus,
- * while others provide diverse conversational and skeptical hooks so the thread stays organic.
+ * Assigns an actionable, conversational reply vibe to each comment.
+ * If a comment contains a question mark, prioritizes question-answering vibes.
+ * If an admin custom focus is provided, weaves that focus into the vibe.
  * 
  * @param {Array<Object>} comments - Array of comment objects
  * @param {string} [customFocus] - Optional admin focus theme
- * @returns {Array<Object>} Comments with attached replyVibe property
+ * @returns {Array<Object>} Comments with attached replyVibe string
  */
 function attachVibesToComments(comments, customFocus = null) {
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
@@ -86,49 +53,47 @@ function attachVibesToComments(comments, customFocus = null) {
     ? customFocus.trim().replace(/^focus:\s*/i, '').replace(/^theme:\s*/i, '')
     : null;
 
-  const shuffledVibes = shuffle(ALL_VIBES);
+  const shuffledVibes = shuffle(ACTIONABLE_VIBES);
 
   return comments.map((comment, idx) => {
-    let vibeObj;
+    let vibe = '';
+    const text = comment.text || '';
 
-    // If custom focus provided, assign it to every 2nd or 3rd comment
-    if (cleanFocus && idx % 3 === 0) {
-      vibeObj = {
-        label: 'Mission Focus',
-        text: `ngl all eyes are on ${cleanFocus} right now — how are you guys actually delivering on this without cutting corners?`
-      };
+    // 1. If comment is asking a question, suggest answering it
+    if (text.includes('?') && idx % 2 === 0) {
+      vibe = 'Try answering the question with your own perspective';
+    } else if (cleanFocus && idx % 3 === 0) {
+      // 2. Weave custom focus if specified by admin
+      vibe = `Challenge them on ${cleanFocus} or ask how it works`;
     } else {
-      vibeObj = shuffledVibes[idx % shuffledVibes.length];
+      // 3. Rotate through diverse actionable vibes
+      vibe = shuffledVibes[idx % shuffledVibes.length];
     }
 
     return {
       ...comment,
-      replyVibe: vibeObj
+      replyVibe: vibe
     };
   });
 }
 
 /**
- * Generates sample lively angles for preview (used by /angles command)
+ * Generates sample reply vibes for preview (used by /angles command)
  * 
  * @param {string} [customFocus] 
- * @returns {Array<{ label: string, text: string }>}
+ * @returns {Array<string>}
  */
 function generateReplyAngles(customFocus = null) {
   const cleanFocus = customFocus 
     ? customFocus.trim().replace(/^focus:\s*/i, '').replace(/^theme:\s*/i, '')
     : null;
 
-  const sample = shuffle(ALL_VIBES).slice(0, 3);
+  const sample = shuffle(ACTIONABLE_VIBES).slice(0, 4);
 
   if (cleanFocus) {
     return [
-      {
-        label: `Mission Focus: ${cleanFocus}`,
-        text: `ngl all eyes are on ${cleanFocus} right now — how are you guys actually delivering on this without cutting corners?`
-      },
-      sample[0],
-      sample[1]
+      `Challenge them on ${cleanFocus} or ask how it works`,
+      ...sample.slice(0, 3)
     ];
   }
 
@@ -136,7 +101,7 @@ function generateReplyAngles(customFocus = null) {
 }
 
 module.exports = {
-  ALL_VIBES,
+  ACTIONABLE_VIBES,
   attachVibesToComments,
   generateReplyAngles
 };

@@ -80,9 +80,12 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
       msg += `   <code>${escapeHtml(commentUrl)}</code>\n`;
 
       if (comment.replyVibe) {
-        const label = comment.replyVibe.label || 'Vibe';
-        const text = comment.replyVibe.text || '';
-        msg += `   💬 <b>Reply Vibe:</b> <i>${escapeHtml(label)} — "${escapeHtml(text)}"</i>\n`;
+        const vibeText = typeof comment.replyVibe === 'string'
+          ? comment.replyVibe
+          : (comment.replyVibe.text || comment.replyVibe.label || '');
+        if (vibeText) {
+          msg += `   💬 <b>Reply Vibe:</b> <i>${escapeHtml(vibeText)}</i>\n`;
+        }
       }
 
       msg += `\n`;

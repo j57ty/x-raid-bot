@@ -272,22 +272,20 @@ console.log('Test 6: Per-Comment Reply Vibes & /raid Formatting');
 
 // Test 6A: Sample angles preview for /angles
 const sampleAngles = generateReplyAngles();
-assert.strictEqual(sampleAngles.length, 3);
+assert.strictEqual(sampleAngles.length, 4);
 for (const a of sampleAngles) {
-  assert(a.label && a.label.length > 0);
-  assert(a.text && a.text.length > 0);
+  assert(typeof a === 'string' && a.length > 0);
 }
-console.log('  ✅ Preview angles: produced 3 lively sample reply hooks');
+console.log('  ✅ Preview angles: produced actionable sample reply vibes');
 
-// Test 6B: attachVibesToComments attaches a vibe to every comment
+// Test 6B: attachVibesToComments attaches a direct vibe to every comment
 const sampleWithVibes = attachVibesToComments(sampleMixed.selectedComments);
 assert.strictEqual(sampleWithVibes.length, sampleMixed.selectedComments.length);
 for (const c of sampleWithVibes) {
   assert(c.replyVibe, 'Each comment must have a replyVibe attached');
-  assert(c.replyVibe.label && c.replyVibe.label.length > 0);
-  assert(c.replyVibe.text && c.replyVibe.text.length > 0);
+  assert(typeof c.replyVibe === 'string' && c.replyVibe.length > 0);
 }
-console.log('  ✅ attachVibesToComments: attached a distinct lively vibe to each comment');
+console.log('  ✅ attachVibesToComments: attached actionable vibes (e.g. "try contradicting or asking questions")');
 
 // Test 6C: Message formatting renders Reply Vibe beside each comment
 const formattedWithVibes = formatRaidMessages({
@@ -305,9 +303,8 @@ console.log('  ✅ /raid message structure renders Reply Vibe beside each commen
 
 // Test 6D: Custom focus integrates mission focus into comments
 const customWithVibes = attachVibesToComments(sampleMixed.selectedComments, 'gas fees and scaling');
-const focusComments = customWithVibes.filter(c => c.replyVibe.label === 'Mission Focus');
+const focusComments = customWithVibes.filter(c => c.replyVibe.includes('gas fees and scaling'));
 assert(focusComments.length > 0);
-assert(focusComments[0].replyVibe.text.includes('gas fees and scaling'));
 console.log('  ✅ Custom focus: successfully integrated mission focus vibe into comment list\n');
 
 // Clean up test data
