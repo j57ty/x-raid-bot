@@ -100,8 +100,24 @@ function generateReplyAngles(customFocus = null) {
   return sample;
 }
 
+/**
+ * Returns a single targeted reply vibe for a main comment or post.
+ * 
+ * @param {string} [customFocus] 
+ * @returns {string}
+ */
+function getTargetVibe(customFocus = null) {
+  if (customFocus && typeof customFocus === 'string' && customFocus.trim().length > 0) {
+    const cleanFocus = customFocus.trim().replace(/^focus:\s*/i, '').replace(/^theme:\s*/i, '');
+    return `Challenge them on ${cleanFocus} or ask how it works`;
+  }
+  const sample = shuffle(ACTIONABLE_VIBES);
+  return sample[0];
+}
+
 module.exports = {
   ACTIONABLE_VIBES,
   attachVibesToComments,
-  generateReplyAngles
+  generateReplyAngles,
+  getTargetVibe
 };

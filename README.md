@@ -1,6 +1,8 @@
 # ⚔️ Telegram X (Twitter) Raid Bot
 
-A Telegram bot built for raid groups. Given any X (Twitter) post link, it scans direct comments under the post, selects **40% of the comments** (prioritizing traction with random fill), and drops them with clean copyable direct links (`https://x.com/...`) for group members to raid.
+A Telegram bot built for raid groups. Works on **both X posts and individual comments**:
+- **On Posts**: Scans direct comments, selects **40% of the comments** (prioritizing traction with random fill), and drops them with clean direct links and actionable reply vibes.
+- **On Comments**: Sets that comment as the main raid target with its direct link and reply vibe, and automatically includes 40% of its sub-replies if any exist.
 
 To protect group operations, **only group administrators** can trigger or use the bot.
 
@@ -8,8 +10,8 @@ To protect group operations, **only group administrators** can trigger or use th
 
 ## 🚀 Features
 
-- **🎯 High-Traction 40% Sampling**: Prioritizes comments that gained traction and fills the remainder to guarantee exactly 40% of comments. Excludes post author comments and nested sub-replies.
-- **💬 Per-Comment Reply Vibes**: Directly pairs each picked comment with its own distinct, lively reply vibe (spicy call-outs, grills, skepticism, raw hype) so replies keep threads active and never look farmed.
+- **🎯 Posts & Comments Support**: Run `/raid` on any X post OR single comment link. Never fails with "no comments found" — if a comment has 0 sub-replies, it instantly sets up a direct target raid for that comment.
+- **💬 Per-Comment Reply Vibes**: Directly pairs each comment with an actionable reply vibe (e.g. *"Try contradicting or asking questions"*, *"Support without repeating the same thing"*, *"Be sarcastic"*) so replies keep threads active and organic.
 - **🚫 Nested Sub-Replies Excluded**: Strictly scans only direct top-level comments under the post, skipping all nested conversation threads.
 - **🔗 Direct Comment Links**: Delivers the exact direct link to each comment (`https://x.com/user/status/...`) along with the commenter's name and `@username`.
 - **🔕 Clean /raid (No Pings)**: `/raid` never tags group members. Member mentions are strictly reserved for the dedicated `/tagall` command.

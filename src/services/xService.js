@@ -554,11 +554,51 @@ async function getTweetComments(tweetId, postAuthorOrOnProgress = null, maybeOnP
   };
 }
 
+/**
+ * Fetches single tweet information (checks if it is a comment/reply and extracts author info).
+ * 
+ * @param {string} tweetId 
+ * @returns {Promise<{ id: string, author?: string, authorName?: string, text?: string, isReply?: boolean, inReplyToStatusId?: string } | null>}
+ */
+async function getTweetInfo(tweetId) {
+  if (!tweetId) return null;
+
+  if (config.TWITTERAPI_IO_KEY) {
+    try {
+      const response = await axios.get('https://api.twitterapi.io/twitter/tweet/info', {
+        params: { tweetId },
+        headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+        timeout: 10000
+      });
+      const t = response.data?.tweet || response.data?.data || response.data;
+      if (t && (t.id || t.id_str)) {
+        const id = String(t.id || t.id_str);
+        const author = t.author?.userName || t.userName || t.author?.username || null;
+        const authorName = t.author?.name || t.name || author;
+        const parentId = extractParentTweetId(t);
+        return {
+          id,
+          author,
+          authorName,
+          text: t.text || '',
+          isReply: Boolean(parentId),
+          inReplyToStatusId: parentId
+        };
+      }
+    } catch (err) {
+      // non-fatal, fallback to URL parsing
+    }
+  }
+
+  return null;
+}
+
 module.exports = {
   parseTweetUrl,
   extractParentTweetId,
   extractInReplyToScreenName,
   isDirectReply,
   getTweetComments,
+  getTweetInfo,
   generateMockComments
 };

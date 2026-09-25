@@ -28,27 +28,52 @@ function chunkArray(arr, size) {
 
 /**
  * Formats raid comment links into one or more Telegram messages using safe HTML.
- * Drops the direct comment links and attaches a lively, thread-igniting reply vibe
- * directly beside each comment.
- * Does NOT tag group members (tagging is reserved exclusively for /tagall).
+ * Supports raiding top-level posts OR comments.
+ * - If target comment has 0 sub-replies, sets up a direct target raid for that comment with its link & vibe.
+ * - If target comment/post has sub-replies, sets up the main target with its vibe AND lists 40% of sub-replies with individual vibes.
+ * - Does NOT tag group members on /raid (tagging is reserved exclusively for /tagall).
  * 
  * @param {Object} params
- * @param {string} params.targetUrl - Original X post URL
+ * @param {string} params.targetUrl - Target post or comment URL
  * @param {Object} params.sampleResult - Output from pickCommentsSample (with attached replyVibe)
+ * @param {string} [params.targetAuthor] - Author handle of target comment/post
+ * @param {string} [params.targetAuthorName] - Display name of target author
+ * @param {string} [params.targetVibe] - Reply vibe for the main target comment/post
+ * @param {boolean} [params.isComment] - True if target is a comment/reply
  * @returns {Array<string>} Array of message strings formatted in HTML for Telegram
  */
-function formatRaidMessages({ targetUrl, sampleResult }) {
-  const { totalComments, samplePercentage, selectedCount, selectedComments } = sampleResult;
+function formatRaidMessages({ 
+  targetUrl, 
+  sampleResult, 
+  targetAuthor = null, 
+  targetAuthorName = null, 
+  targetVibe = null, 
+  isComment = false 
+}) {
+  const { totalComments, samplePercentage, selectedCount, selectedComments = [] } = sampleResult || {};
 
-  if (selectedComments.length === 0) {
-    return [
-      `⚠️ <b>No direct comments found on target post</b>\n\n` +
-      `🔗 <b>Target Post:</b> ${escapeHtml(targetUrl)}\n` +
-      `Check if the post has any replies or if replies are restricted.`
-    ];
+  const cleanAuthor = targetAuthor ? targetAuthor.replace(/^@/, '') : null;
+  const authorName = targetAuthorName || cleanAuthor || 'Author';
+  const targetLabel = isComment ? 'Target Comment' : 'Target Post';
+
+  // Case A: Single Comment / Target Raid (0 sub-replies found)
+  if (!selectedComments || selectedComments.length === 0) {
+    let msg = `⚔️ <b>X RAID TARGET ACTIVATED</b> ⚔️\n\n`;
+    msg += `🎯 <b>${targetLabel}:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
+    if (cleanAuthor) {
+      msg += `👤 <b>Author:</b> <b>${escapeHtml(authorName)}</b> (@${escapeHtml(cleanAuthor)})\n`;
+    }
+    if (targetVibe) {
+      msg += `💬 <b>Reply Vibe:</b> <i>${escapeHtml(targetVibe)}</i>\n\n`;
+    } else {
+      msg += `\n`;
+    }
+    msg += `🔥 <b>Instructions:</b> Click the link above, like, and drop your reply matching the vibe!`;
+
+    return [msg.trim()];
   }
 
-  // 10 comments per message to comfortably fit links + vibes within Telegram's 4096 char limit
+  // Case B: Target with Sub-Replies
   const maxLinksPerMessage = Math.min(10, config.MAX_LINKS_PER_MESSAGE || 10);
   const batches = chunkArray(selectedComments, maxLinksPerMessage);
   const totalBatches = batches.length;
@@ -60,11 +85,18 @@ function formatRaidMessages({ targetUrl, sampleResult }) {
     let msg = '';
 
     if (index === 0) {
-      // First batch header
+      const subLabel = isComment ? 'Sub-Replies' : 'Direct Comments';
+
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
-      msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
-      msg += `📊 <b>Direct Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
-      msg += `👇 <b>Target Comments to Raid (with Reply Vibes):</b>\n\n`;
+      msg += `🎯 <b>${targetLabel}:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
+      if (cleanAuthor) {
+        msg += `👤 <b>Author:</b> <b>${escapeHtml(authorName)}</b> (@${escapeHtml(cleanAuthor)})\n`;
+      }
+      if (targetVibe) {
+        msg += `💬 <b>Target Reply Vibe:</b> <i>${escapeHtml(targetVibe)}</i>\n`;
+      }
+      msg += `📊 <b>${subLabel}:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>${isComment ? 'Sub-Thread Targets (with Reply Vibes):' : 'Target Comments to Raid (with Reply Vibes):'}</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;

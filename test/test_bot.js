@@ -305,7 +305,59 @@ console.log('  ✅ /raid message structure renders Reply Vibe beside each commen
 const customWithVibes = attachVibesToComments(sampleMixed.selectedComments, 'gas fees and scaling');
 const focusComments = customWithVibes.filter(c => c.replyVibe.includes('gas fees and scaling'));
 assert(focusComments.length > 0);
-console.log('  ✅ Custom focus: successfully integrated mission focus vibe into comment list\n');
+// ----------------------------------------------------
+// 7. Test: Comment Raid Support (Direct Comment Targets & Sub-Replies)
+// ----------------------------------------------------
+console.log('Test 7: Comment Raid Support (Direct Comment Targets & Sub-Replies)');
+
+// Test 7A: Single Comment Raid (0 sub-replies)
+const singleCommentRaid = formatRaidMessages({
+  targetUrl: 'https://x.com/crypto_raider/status/18900000001001',
+  sampleResult: {
+    totalComments: 0,
+    selectedCount: 0,
+    selectedComments: []
+  },
+  targetAuthor: 'crypto_raider',
+  targetAuthorName: 'Crypto Raider',
+  targetVibe: 'Try contradicting or asking questions',
+  isComment: true
+});
+
+assert.strictEqual(singleCommentRaid.length, 1);
+assert(singleCommentRaid[0].includes('⚔️ <b>X RAID TARGET ACTIVATED</b> ⚔️'));
+assert(singleCommentRaid[0].includes('Target Comment'));
+assert(singleCommentRaid[0].includes('https://x.com/crypto_raider/status/18900000001001'));
+assert(singleCommentRaid[0].includes('@crypto_raider'));
+assert(singleCommentRaid[0].includes('Try contradicting or asking questions'));
+console.log('  ✅ Single comment raid: activated direct target raid with link and reply vibe (0 sub-replies)');
+
+// Test 7B: Comment Raid with sub-replies
+const commentWithSubReplies = formatRaidMessages({
+  targetUrl: 'https://x.com/crypto_raider/status/18900000001001',
+  sampleResult: {
+    totalComments: 5,
+    samplePercentage: 40,
+    selectedCount: 2,
+    selectedComments: [
+      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic' },
+      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing' }
+    ]
+  },
+  targetAuthor: 'crypto_raider',
+  targetAuthorName: 'Crypto Raider',
+  targetVibe: 'Play devil\'s advocate',
+  isComment: true
+});
+
+assert(commentWithSubReplies[0].includes('Target Comment'));
+assert(commentWithSubReplies[0].includes('Target Reply Vibe'));
+assert(commentWithSubReplies[0].includes('Play devil\'s advocate'));
+assert(commentWithSubReplies[0].includes('Sub-Replies:</b> 5'));
+assert(commentWithSubReplies[0].includes('Sub-Thread Targets'));
+assert(commentWithSubReplies[0].includes('@sub_user1'));
+assert(commentWithSubReplies[0].includes('Be sarcastic'));
+console.log('  ✅ Comment raid with sub-replies: renders target comment vibe + sub-thread comment vibes cleanly\n');
 
 // Clean up test data
 memberStore.clearMembers(testChatId);

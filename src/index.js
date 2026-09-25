@@ -1,10 +1,10 @@
 const { Bot } = require('grammy');
 const config = require('./config');
 const { requireGroupAdmin } = require('./middleware/adminCheck');
-const { parseTweetUrl, getTweetComments } = require('./services/xService');
+const { parseTweetUrl, getTweetComments, getTweetInfo } = require('./services/xService');
 const { pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
-const { generateReplyAngles, attachVibesToComments } = require('./services/anglesGenerator');
+const { generateReplyAngles, attachVibesToComments, getTargetVibe } = require('./services/anglesGenerator');
 const memberStore = require('./services/memberStore');
 
 if (!config.TELEGRAM_BOT_TOKEN) {
@@ -402,22 +402,35 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
   // Send initial pending message
   const statusMsg = await safeReply(
     ctx,
-    `⏳ <b>Scanning X Post...</b>\n` +
-    `🎯 Post: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
-    `Fetching comments and preparing a <b>${samplePercent}%</b> raid selection...`
+    `⏳ <b>Scanning X Target...</b>\n` +
+    `🎯 Target: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
+    `Analyzing target and preparing raid...`
   );
 
   try {
     const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
 
-    // 1. Fetch comments from X with live progress updates (filtering nested replies & post author)
+    // Check if target is a comment or get author display name
+    let tweetInfo = null;
+    try {
+      tweetInfo = await getTweetInfo(parsed.tweetId);
+    } catch (e) {
+      // non-fatal
+    }
+
+    const isComment = tweetInfo ? Boolean(tweetInfo.isReply) : false;
+    const targetAuthor = tweetInfo?.author || parsed.username;
+    const targetAuthorName = tweetInfo?.authorName || parsed.username;
+    const targetVibe = getTargetVibe(customFocus);
+
+    // 1. Fetch comments/sub-replies from X with live progress updates
     const onProgress = async (count, page) => {
       try {
         await safeEditMessage(
           ctx,
           statusMsg.message_id,
-          `⏳ <b>Scanning X Post...</b>\n` +
-          `🎯 Post: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
+          `⏳ <b>Scanning X Target...</b>\n` +
+          `🎯 Target: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
           `📥 Discovered <b>${count}</b> direct comments so far (scanning page ${page})...`
         );
       } catch (e) {
@@ -425,12 +438,19 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       }
     };
 
-    const result = await getTweetComments(parsed.tweetId, postAuthor, onProgress);
-    const rawComments = result.comments || [];
+    let rawComments = [];
+    let warning = null;
+    try {
+      const result = await getTweetComments(parsed.tweetId, postAuthor, onProgress);
+      rawComments = result.comments || [];
+      warning = result.warning || null;
+    } catch (fetchErr) {
+      console.warn('[Raid] Notice while fetching sub-comments:', fetchErr.message);
+    }
 
     // Filter out:
-    // 1. Any comments made by the post author under their own post
-    // 2. Any nested sub-replies (comments replying to other commenters instead of main tweet)
+    // 1. Any comments made by the author under their own comment/post
+    // 2. Any nested sub-replies (comments replying to other commenters instead of direct replies)
     const comments = rawComments.filter(c => {
       const commentAuthor = (c.author || '').toLowerCase().replace(/^@/, '');
       if (commentAuthor === postAuthor) return false;
@@ -445,34 +465,36 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       return true;
     });
 
-    if (!comments || comments.length === 0) {
-      await safeEditMessage(
-        ctx,
-        statusMsg.message_id,
-        `⚠️ <b>No eligible direct comments found on target post.</b>\n\n` +
-        `Post: ${escapeHtml(parsed.cleanUrl)}\n` +
-        `Either the tweet has no replies yet, or all comments were nested replies or made by the post author (@${escapeHtml(parsed.username)}).`,
-        { link_preview_options: { is_disabled: true } }
-      );
-      return;
+    let sampleResult;
+    if (comments.length > 0) {
+      // 2. Select 40% (or requested percent) prioritizing traction comments
+      sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
+      // 3. Attach lively, thread-igniting reply vibes per comment
+      sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
+    } else {
+      // 0 sub-replies: treat target as direct comment raid!
+      sampleResult = {
+        totalComments: 0,
+        samplePercentage: samplePercent,
+        selectedCount: 0,
+        selectedComments: []
+      };
     }
 
-    // 2. Select 40% (or requested percent) prioritizing traction comments
-    const sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
-
-    // 3. Attach lively, thread-igniting reply vibes per comment (no bot talk)
-    sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
-
-    // 4. Format into chunked raid messages (clean links with per-comment vibes, NO member tagging)
+    // 4. Format into chunked raid messages (supports comments and posts)
     const formattedMessages = formatRaidMessages({
       targetUrl: parsed.cleanUrl,
-      sampleResult
+      sampleResult,
+      targetAuthor,
+      targetAuthorName,
+      targetVibe,
+      isComment
     });
 
     // 5. Update initial scanning message with first batch
     let firstMsgText = formattedMessages[0];
-    if (result.warning) {
-      firstMsgText += `\n\n<i>${escapeHtml(result.warning)}</i>`;
+    if (warning) {
+      firstMsgText += `\n\n<i>${escapeHtml(warning)}</i>`;
     }
 
     await safeEditMessage(ctx, statusMsg.message_id, firstMsgText, {
