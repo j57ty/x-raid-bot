@@ -20,7 +20,7 @@ module.exports = {
   // Bot Settings
   DEFAULT_SAMPLE_PERCENT: parseInt(process.env.DEFAULT_SAMPLE_PERCENT || '40', 10),
   MAX_LINKS_PER_MESSAGE: parseInt(process.env.MAX_LINKS_PER_MESSAGE || '15', 10),
-  MAX_SCAN_PAGES: parseInt(process.env.MAX_SCAN_PAGES || '5', 10), // 5 pages = up to 100 comments scanned in ~20s
+  MAX_SCAN_PAGES: parseInt(process.env.MAX_SCAN_PAGES || '25', 10), // 25 pages = up to 500+ comments scanned
   FILTER_ZERO_TRACTION: process.env.FILTER_ZERO_TRACTION !== 'false', // Default true: filters zero-engagement comments
   EXCLUDE_NESTED_REPLIES: process.env.EXCLUDE_NESTED_REPLIES !== 'false', // Default true: excludes nested sub-replies
   TARGETS_PER_RAIDER: parseInt(process.env.TARGETS_PER_RAIDER || '4', 10), // Targets assigned per group member (default: 4)
