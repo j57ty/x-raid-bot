@@ -398,24 +398,24 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
   );
 
   try {
-    const postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
-
-    // Check if target is a comment or get author display name
-    let tweetInfo = null;
-    try {
-      tweetInfo = await getTweetInfo(parsed.tweetId);
-    } catch (e) {
-      // non-fatal
-    }
-
     let postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
-    if ((!postAuthor || postAuthor === 'i') && tweetInfo?.author) {
-      postAuthor = tweetInfo.author.toLowerCase().replace(/^@/, '');
+
+    // Only fetch tweet info if author handle is missing (e.g. /i/status/123)
+    let tweetInfo = null;
+    if (!postAuthor || postAuthor === 'i') {
+      try {
+        tweetInfo = await getTweetInfo(parsed.tweetId);
+        if (tweetInfo?.author) {
+          postAuthor = tweetInfo.author.toLowerCase().replace(/^@/, '');
+        }
+      } catch (e) {
+        // non-fatal
+      }
     }
 
-    const isComment = tweetInfo ? Boolean(tweetInfo.isReply) : false;
-    const targetAuthor = tweetInfo?.author || (parsed.username !== 'i' ? parsed.username : null);
-    const targetAuthorName = tweetInfo?.authorName || targetAuthor || 'Author';
+    let isComment = tweetInfo ? Boolean(tweetInfo.isReply) : false;
+    let targetAuthor = tweetInfo?.author || (parsed.username !== 'i' ? parsed.username : null);
+    let targetAuthorName = tweetInfo?.authorName || targetAuthor || 'Author';
     const targetVibe = getTargetVibe(customFocus);
 
     // 1. Fetch comments/sub-replies from X with live progress updates
@@ -468,22 +468,40 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
       // 3. Attach lively, thread-igniting reply vibes per comment
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
-    } else if (isComment) {
-      // 0 sub-replies on a target comment: treat target as direct comment raid!
-      sampleResult = {
-        totalComments: 0,
-        samplePercentage: samplePercent,
-        selectedCount: 0,
-        selectedComments: []
-      };
     } else {
-      // Top-level post with 0 comments found
-      await safeEditMessage(
-        ctx,
-        statusMsg.message_id,
-        `ℹ️ <b>No Comments Found</b>: The target post at <code>${escapeHtml(parsed.cleanUrl)}</code> currently has 0 comments to raid.`
-      );
-      return;
+      // If 0 comments found, check if the target was a comment/reply
+      if (!tweetInfo) {
+        try {
+          tweetInfo = await getTweetInfo(parsed.tweetId);
+          if (tweetInfo?.isReply) {
+            isComment = true;
+          }
+          if (tweetInfo?.author) {
+            targetAuthor = tweetInfo.author;
+            targetAuthorName = tweetInfo.authorName || tweetInfo.author;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (isComment) {
+        // 0 sub-replies on a target comment: treat target as direct comment raid!
+        sampleResult = {
+          totalComments: 0,
+          samplePercentage: samplePercent,
+          selectedCount: 0,
+          selectedComments: []
+        };
+      } else {
+        // Top-level post with 0 comments found
+        await safeEditMessage(
+          ctx,
+          statusMsg.message_id,
+          `ℹ️ <b>No Comments Found</b>: The target post at <code>${escapeHtml(parsed.cleanUrl)}</code> currently has 0 comments to raid.`
+        );
+        return;
+      }
     }
 
     // 4. Format into chunked raid messages (supports comments and posts)

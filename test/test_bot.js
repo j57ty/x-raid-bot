@@ -6,7 +6,16 @@ const { generateReplyAngles, attachVibesToComments } = require('../src/services/
 const memberStore = require('../src/services/memberStore');
 const { isUserAdmin, isMessageDirectedAtBot, enforceAdminOnlyMiddleware, requireGroupAdmin } = require('../src/middleware/adminCheck');
 
+const { execSync } = require('child_process');
+
 console.log('🧪 Starting Automated Tests for X Raid Bot...\n');
+
+// ----------------------------------------------------
+// 0. Test: Codebase Syntax Integrity
+// ----------------------------------------------------
+console.log('Test 0: Syntax Integrity');
+execSync('node -c src/index.js');
+console.log('  ✅ src/index.js syntax is 100% valid\n');
 
 // ----------------------------------------------------
 // 1. Test: parseTweetUrl
