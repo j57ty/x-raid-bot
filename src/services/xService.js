@@ -82,9 +82,11 @@ function isDirectReply(tweet, targetTweetId, postAuthor = null) {
 
   if (postAuthor) {
     const normPostAuthor = String(postAuthor).toLowerCase().replace(/^@/, '');
-    const replyToUser = extractInReplyToScreenName(tweet);
-    if (replyToUser && replyToUser !== normPostAuthor) {
-      return false;
+    if (normPostAuthor !== 'i') {
+      const replyToUser = extractInReplyToScreenName(tweet);
+      if (replyToUser && replyToUser !== normPostAuthor) {
+        return false;
+      }
     }
   }
 
@@ -306,11 +308,25 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
 
     try {
       console.log(`[TwitterAPI.io] Fetching replies page ${page}/${maxPages} for tweet ${tweetId}...`);
-      const response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
-        params,
-        headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
-        timeout: 25000
-      });
+      
+      let response = null;
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        try {
+          response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
+            params,
+            headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+            timeout: 25000
+          });
+          break;
+        } catch (reqErr) {
+          if (reqErr.response?.status === 429 && attempt < 2) {
+            console.warn(`[TwitterAPI.io] Hit 429 Rate Limit (1 req / 5s). Waiting 5.5s before retry ${attempt + 1}/2...`);
+            await sleep(5500);
+            continue;
+          }
+          throw reqErr;
+        }
+      }
 
       const tweets = response.data?.tweets || response.data?.replies || [];
       for (const tweet of tweets) {
@@ -565,12 +581,26 @@ async function getTweetInfo(tweetId) {
 
   if (config.TWITTERAPI_IO_KEY) {
     try {
-      const response = await axios.get('https://api.twitterapi.io/twitter/tweet/info', {
-        params: { tweetId },
-        headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
-        timeout: 10000
-      });
-      const t = response.data?.tweet || response.data?.data || response.data;
+      let response = null;
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        try {
+          response = await axios.get('https://api.twitterapi.io/twitter/tweet/info', {
+            params: { tweetId },
+            headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+            timeout: 10000
+          });
+          break;
+        } catch (reqErr) {
+          if (reqErr.response?.status === 429 && attempt < 2) {
+            console.warn(`[TwitterAPI.io] getTweetInfo 429 rate limit. Waiting 5.5s before retry ${attempt + 1}/2...`);
+            await new Promise(r => setTimeout(r, 5500));
+            continue;
+          }
+          throw reqErr;
+        }
+      }
+
+      const t = response?.data?.tweet || response?.data?.data || response?.data;
       if (t && (t.id || t.id_str)) {
         const id = String(t.id || t.id_str);
         const author = t.author?.userName || t.userName || t.author?.username || null;

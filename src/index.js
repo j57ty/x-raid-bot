@@ -408,9 +408,14 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       // non-fatal
     }
 
+    let postAuthor = (parsed.username || '').toLowerCase().replace(/^@/, '');
+    if ((!postAuthor || postAuthor === 'i') && tweetInfo?.author) {
+      postAuthor = tweetInfo.author.toLowerCase().replace(/^@/, '');
+    }
+
     const isComment = tweetInfo ? Boolean(tweetInfo.isReply) : false;
-    const targetAuthor = tweetInfo?.author || parsed.username;
-    const targetAuthorName = tweetInfo?.authorName || parsed.username;
+    const targetAuthor = tweetInfo?.author || (parsed.username !== 'i' ? parsed.username : null);
+    const targetAuthorName = tweetInfo?.authorName || targetAuthor || 'Author';
     const targetVibe = getTargetVibe(customFocus);
 
     // 1. Fetch comments/sub-replies from X with live progress updates
@@ -435,7 +440,9 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       rawComments = result.comments || [];
       warning = result.warning || null;
     } catch (fetchErr) {
-      console.warn('[Raid] Notice while fetching sub-comments:', fetchErr.message);
+      console.error('[Raid] Error while fetching comments:', fetchErr.message);
+      // Re-throw so user gets transparent feedback about API status instead of silent blank output
+      throw fetchErr;
     }
 
     // Filter out:
@@ -443,7 +450,7 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
     // 2. Any nested sub-replies (comments replying to other commenters instead of direct replies)
     const comments = rawComments.filter(c => {
       const commentAuthor = (c.author || '').toLowerCase().replace(/^@/, '');
-      if (commentAuthor === postAuthor) return false;
+      if (postAuthor && postAuthor !== 'i' && commentAuthor === postAuthor) return false;
 
       if (config.EXCLUDE_NESTED_REPLIES) {
         const inReplyTo = c.inReplyToStatusId || c.in_reply_to_status_id || c.inReplyToTweetId;
@@ -461,14 +468,22 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
       // 3. Attach lively, thread-igniting reply vibes per comment
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
-    } else {
-      // 0 sub-replies: treat target as direct comment raid!
+    } else if (isComment) {
+      // 0 sub-replies on a target comment: treat target as direct comment raid!
       sampleResult = {
         totalComments: 0,
         samplePercentage: samplePercent,
         selectedCount: 0,
         selectedComments: []
       };
+    } else {
+      // Top-level post with 0 comments found
+      await safeEditMessage(
+        ctx,
+        statusMsg.message_id,
+        `ℹ️ <b>No Comments Found</b>: The target post at <code>${escapeHtml(parsed.cleanUrl)}</code> currently has 0 comments to raid.`
+      );
+      return;
     }
 
     // 4. Format into chunked raid messages (supports comments and posts)
