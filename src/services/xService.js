@@ -291,16 +291,24 @@ async function fetchRepliesViaGraphQL(tweetId, postAuthor = null) {
 /**
  * Strategy 3: Third-Party API (e.g., twitterapi.io) with multi-page cursor pagination.
  */
-async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = config.MAX_SCAN_PAGES, onProgress = null) {
+async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = config.MAX_SCAN_PAGES, onProgress = null, maxDurationMs = 180000) {
   if (!config.TWITTERAPI_IO_KEY) {
     throw new Error('TWITTERAPI_IO_KEY not configured.');
   }
 
   const comments = [];
+  const seenTweetIds = new Set();
+  const startTime = Date.now();
   let cursor = null;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   for (let page = 1; page <= maxPages; page++) {
+    // If approaching time budget, gracefully return collected comments
+    if (Date.now() - startTime > maxDurationMs - 12000 && comments.length > 0) {
+      console.log(`[TwitterAPI.io] Approaching scan time limit (${Math.round((Date.now() - startTime) / 1000)}s). Returning ${comments.length} comments collected.`);
+      break;
+    }
+
     const params = { tweetId };
     if (cursor) {
       params.cursor = cursor;
@@ -329,10 +337,14 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
       }
 
       const tweets = response.data?.tweets || response.data?.replies || [];
+      let newInPage = 0;
       for (const tweet of tweets) {
-        if (!tweet.id || String(tweet.id) === String(tweetId)) {
+        if (!tweet.id || String(tweet.id) === String(tweetId) || seenTweetIds.has(String(tweet.id))) {
           continue;
         }
+
+        seenTweetIds.add(String(tweet.id));
+        newInPage++;
 
         const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
         const normAuthor = String(author).toLowerCase().replace(/^@/, '');
@@ -370,7 +382,7 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
         });
       }
 
-      // Notify progress if callback provided - reflects ONLY direct comments!
+      // Notify progress if callback provided
       if (onProgress && typeof onProgress === 'function') {
         try {
           await onProgress(comments.length, page);
@@ -379,8 +391,8 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
         }
       }
 
-      // Check if there is another page
-      if (!response.data?.has_next_page || !response.data?.next_cursor) {
+      // Check if there is another page or if no new tweets were received
+      if (!response.data?.has_next_page || !response.data?.next_cursor || (tweets.length > 0 && newInPage === 0)) {
         break;
       }
 
@@ -512,15 +524,15 @@ async function getTweetComments(tweetId, postAuthorOrOnProgress = null, maybeOnP
   // 1. Always prioritize live Third-Party API if key exists (Live real replies, no bans)
   if (config.TWITTERAPI_IO_KEY) {
     try {
-      const scanTimeoutMs = Math.max(120000, (config.MAX_SCAN_PAGES * 6500) + 30000);
+      const scanTimeoutMs = Math.max(120000, (config.MAX_SCAN_PAGES * 9500) + 30000);
       console.log(`[XService] Fetching real live replies via TwitterAPI.io for tweet ${tweetId} (maxPages: ${config.MAX_SCAN_PAGES}, timeout: ${scanTimeoutMs / 1000}s)...`);
       const results = await withTimeout(
-        fetchRepliesViaThirdParty(tweetId, postAuthor, config.MAX_SCAN_PAGES, onProgress),
+        fetchRepliesViaThirdParty(tweetId, postAuthor, config.MAX_SCAN_PAGES, onProgress, scanTimeoutMs - 10000),
         scanTimeoutMs,
         'TwitterAPI.io'
       );
       if (results && results.length > 0) {
-        console.log(`[XService] Successfully retrieved ${results.length} direct comments for tweet ${tweetId}`);
+        console.log(`[XService] Successfully retrieved ${results.length} comments for tweet ${tweetId}`);
         return { comments: results };
       }
       return { comments: [] };
