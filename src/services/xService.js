@@ -596,8 +596,8 @@ async function getTweetInfo(tweetId) {
       let response = null;
       for (let attempt = 0; attempt <= 2; attempt++) {
         try {
-          response = await axios.get('https://api.twitterapi.io/twitter/tweet/info', {
-            params: { tweetId },
+          response = await axios.get('https://api.twitterapi.io/twitter/tweets', {
+            params: { tweet_ids: tweetId },
             headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
             timeout: 10000
           });
@@ -612,22 +612,25 @@ async function getTweetInfo(tweetId) {
         }
       }
 
-      const t = response?.data?.tweet || response?.data?.data || response?.data;
+      const tweets = response?.data?.tweets || [];
+      const t = tweets[0] || response?.data?.tweet || response?.data?.data || response?.data;
       if (t && (t.id || t.id_str)) {
         const id = String(t.id || t.id_str);
         const author = t.author?.userName || t.userName || t.author?.username || null;
         const authorName = t.author?.name || t.name || author;
-        const parentId = extractParentTweetId(t);
+        const parentId = extractParentTweetId(t) || t.inReplyToId || t.in_reply_to_status_id || null;
+        const isReply = Boolean(t.isReply || parentId);
         return {
           id,
           author,
           authorName,
           text: t.text || '',
-          isReply: Boolean(parentId),
+          isReply,
           inReplyToStatusId: parentId
         };
       }
     } catch (err) {
+      console.warn(`[TwitterAPI.io] getTweetInfo failed for tweet ${tweetId}:`, err.message);
       // non-fatal, fallback to URL parsing
     }
   }

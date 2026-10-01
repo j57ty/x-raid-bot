@@ -485,23 +485,13 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
         }
       }
 
-      if (isComment) {
-        // 0 sub-replies on a target comment: treat target as direct comment raid!
-        sampleResult = {
-          totalComments: 0,
-          samplePercentage: samplePercent,
-          selectedCount: 0,
-          selectedComments: []
-        };
-      } else {
-        // Top-level post with 0 comments found
-        await safeEditMessage(
-          ctx,
-          statusMsg.message_id,
-          `ℹ️ <b>No Comments Found</b>: The target post at <code>${escapeHtml(parsed.cleanUrl)}</code> currently has 0 comments to raid.`
-        );
-        return;
-      }
+      // If target has 0 sub-replies or is a comment, treat target as direct raid mission!
+      sampleResult = {
+        totalComments: 0,
+        samplePercentage: samplePercent,
+        selectedCount: 0,
+        selectedComments: []
+      };
     }
 
     // 4. Format into chunked raid messages (supports comments and posts)
