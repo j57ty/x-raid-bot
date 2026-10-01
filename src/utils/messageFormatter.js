@@ -54,12 +54,12 @@ function formatRaidMessages({
 
   const cleanAuthor = targetAuthor ? targetAuthor.replace(/^@/, '') : null;
   const authorName = targetAuthorName || cleanAuthor || 'Author';
-  const targetLabel = isComment ? 'Target Comment' : 'Target Post';
 
   // Case A: Single Comment / Target Raid (0 sub-replies found)
   if (!selectedComments || selectedComments.length === 0) {
+    const singleLabel = isComment ? 'Target Comment' : 'Target Post';
     let msg = `⚔️ <b>X RAID TARGET ACTIVATED</b> ⚔️\n\n`;
-    msg += `🎯 <b>${targetLabel}:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
+    msg += `🎯 <b>${singleLabel}:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
     if (cleanAuthor) {
       msg += `👤 <b>Author:</b> <b>${escapeHtml(authorName)}</b> (@${escapeHtml(cleanAuthor)})\n`;
     }
@@ -73,7 +73,7 @@ function formatRaidMessages({
     return [msg.trim()];
   }
 
-  // Case B: Target with Sub-Replies
+  // Case B: Target with Comments / Sub-Replies (treated as main post raid)
   const maxLinksPerMessage = Math.min(10, config.MAX_LINKS_PER_MESSAGE || 10);
   const batches = chunkArray(selectedComments, maxLinksPerMessage);
   const totalBatches = batches.length;
@@ -85,18 +85,16 @@ function formatRaidMessages({
     let msg = '';
 
     if (index === 0) {
-      const subLabel = isComment ? 'Sub-Replies' : 'Direct Comments';
-
       msg += `⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️\n\n`;
-      msg += `🎯 <b>${targetLabel}:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
+      msg += `🎯 <b>Target Post:</b> <a href="${escapeHtml(targetUrl)}">${escapeHtml(targetUrl)}</a>\n`;
       if (cleanAuthor) {
         msg += `👤 <b>Author:</b> <b>${escapeHtml(authorName)}</b> (@${escapeHtml(cleanAuthor)})\n`;
       }
       if (targetVibe) {
         msg += `💬 <b>Target Reply Vibe:</b> <i>${escapeHtml(targetVibe)}</i>\n`;
       }
-      msg += `📊 <b>${subLabel}:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
-      msg += `👇 <b>${isComment ? 'Sub-Thread Targets (with Reply Vibes):' : 'Target Comments to Raid (with Reply Vibes):'}</b>\n\n`;
+      msg += `📊 <b>Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `👇 <b>Target Comments to Raid (with Reply Vibes):</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;

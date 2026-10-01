@@ -94,6 +94,48 @@ function isDirectReply(tweet, targetTweetId, postAuthor = null) {
 }
 
 /**
+ * Filters replies in a conversation thread so that only descendants
+ * (direct replies and nested sub-replies) of targetTweetId are returned.
+ * - If targetTweetId is the root tweet of the thread (matches conversationId),
+ *   all replies in the conversation are included.
+ * - If targetTweetId is a comment in the thread, only replies branching underneath
+ *   that comment are included; all ancestor tweets (the root tweet and parent comments)
+ *   and other branches are discarded.
+ * 
+ * @param {Array<Object>} tweets - Raw tweets from thread response
+ * @param {string} targetTweetId - Target tweet ID (could be root or comment)
+ * @param {string} [conversationId] - Root conversation ID if known
+ * @returns {Array<Object>} Filtered descendant tweets
+ */
+function filterDescendantReplies(tweets, targetTweetId, conversationId = null) {
+  if (!Array.isArray(tweets) || tweets.length === 0) return [];
+  const targetIdStr = String(targetTweetId);
+
+  // If targetTweetId is known to be the root tweet of the entire conversation,
+  // then every other tweet in the conversation is a reply under it.
+  if (conversationId && String(conversationId) === targetIdStr) {
+    return tweets.filter(t => t && t.id && String(t.id) !== targetIdStr);
+  }
+
+  const descendantIds = new Set([targetIdStr]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const t of tweets) {
+      if (!t || !t.id) continue;
+      const id = String(t.id);
+      const parentId = extractParentTweetId(t);
+      if (parentId && descendantIds.has(String(parentId)) && !descendantIds.has(id)) {
+        descendantIds.add(id);
+        added = true;
+      }
+    }
+  }
+
+  return tweets.filter(t => t && t.id && descendantIds.has(String(t.id)) && String(t.id) !== targetIdStr);
+}
+
+/**
  * Initializes and authenticates an agent-twitter-client Scraper instance.
  */
 let scraperInstance = null;
@@ -290,22 +332,25 @@ async function fetchRepliesViaGraphQL(tweetId, postAuthor = null) {
 
 /**
  * Strategy 3: Third-Party API (e.g., twitterapi.io) with multi-page cursor pagination.
+ * Supports root posts and comments with sub-replies using replies/v2.
  */
 async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = config.MAX_SCAN_PAGES, onProgress = null, maxDurationMs = 180000) {
   if (!config.TWITTERAPI_IO_KEY) {
     throw new Error('TWITTERAPI_IO_KEY not configured.');
   }
 
-  const comments = [];
+  const allRawTweets = [];
   const seenTweetIds = new Set();
   const startTime = Date.now();
   let cursor = null;
+  let conversationId = null;
+  let targetTweet = null;
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   for (let page = 1; page <= maxPages; page++) {
     // If approaching time budget, gracefully return collected comments
-    if (Date.now() - startTime > maxDurationMs - 12000 && comments.length > 0) {
-      console.log(`[TwitterAPI.io] Approaching scan time limit (${Math.round((Date.now() - startTime) / 1000)}s). Returning ${comments.length} comments collected.`);
+    if (Date.now() - startTime > maxDurationMs - 12000 && allRawTweets.length > 0) {
+      console.log(`[TwitterAPI.io] Approaching scan time limit (${Math.round((Date.now() - startTime) / 1000)}s). Returning comments collected so far.`);
       break;
     }
 
@@ -315,12 +360,12 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
     }
 
     try {
-      console.log(`[TwitterAPI.io] Fetching replies page ${page}/${maxPages} for tweet ${tweetId}...`);
+      console.log(`[TwitterAPI.io] Fetching replies/v2 page ${page}/${maxPages} for tweet ${tweetId}...`);
       
       let response = null;
       for (let attempt = 0; attempt <= 2; attempt++) {
         try {
-          response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
+          response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies/v2', {
             params,
             headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
             timeout: 25000
@@ -332,6 +377,20 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
             await sleep(5500);
             continue;
           }
+          // If v2 fails with a non-429 error on page 1, fallback to v1
+          if (page === 1 && reqErr.response?.status !== 429 && reqErr.response?.status !== 402) {
+            console.warn(`[TwitterAPI.io] replies/v2 request failed (${reqErr.message}), falling back to v1...`);
+            try {
+              response = await axios.get('https://api.twitterapi.io/twitter/tweet/replies', {
+                params,
+                headers: { 'X-API-Key': config.TWITTERAPI_IO_KEY },
+                timeout: 25000
+              });
+              break;
+            } catch (v1Err) {
+              throw reqErr;
+            }
+          }
           throw reqErr;
         }
       }
@@ -339,53 +398,25 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
       const tweets = response.data?.tweets || response.data?.replies || [];
       let newInPage = 0;
       for (const tweet of tweets) {
-        if (!tweet.id || String(tweet.id) === String(tweetId) || seenTweetIds.has(String(tweet.id))) {
-          continue;
+        if (!tweet || !tweet.id) continue;
+        const idStr = String(tweet.id);
+        if (idStr === String(tweetId) && !targetTweet) {
+          targetTweet = tweet;
         }
-
-        seenTweetIds.add(String(tweet.id));
+        if (tweet.conversationId && !conversationId) {
+          conversationId = String(tweet.conversationId);
+        }
+        if (seenTweetIds.has(idStr)) continue;
+        seenTweetIds.add(idStr);
+        allRawTweets.push(tweet);
         newInPage++;
-
-        const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
-        const normAuthor = String(author).toLowerCase().replace(/^@/, '');
-
-        // 1. Exclude author comments under their own post
-        if (postAuthor && normAuthor === String(postAuthor).toLowerCase().replace(/^@/, '')) {
-          continue;
-        }
-
-        // 2. Exclude nested sub-replies (replies to other commenters) if configured
-        if (config.EXCLUDE_NESTED_REPLIES && !isDirectReply(tweet, tweetId, postAuthor)) {
-          continue;
-        }
-
-        const authorName = tweet.author?.name || tweet.name || author;
-        const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
-        const likes = Number(tweet.likeCount ?? tweet.likes ?? tweet.favoriteCount ?? tweet.favorite_count ?? 0);
-        const retweets = Number(tweet.retweetCount ?? tweet.retweets ?? 0);
-        const replies = Number(tweet.replyCount ?? tweet.replies ?? 0);
-        const views = Number(tweet.viewCount ?? tweet.views ?? 0);
-        const quotes = Number(tweet.quoteCount ?? tweet.quotes ?? 0);
-        comments.push({
-          id: String(tweet.id),
-          author,
-          authorName,
-          text: tweet.text || '',
-          url: rawUrl.replace('twitter.com', 'x.com'),
-          likes,
-          retweets,
-          replies,
-          views,
-          quotes,
-          inReplyToStatusId: extractParentTweetId(tweet) || tweetId,
-          engagement: likes + retweets + replies + quotes
-        });
       }
 
-      // Notify progress if callback provided
+      // Check current descendant count for live progress reporting
       if (onProgress && typeof onProgress === 'function') {
         try {
-          await onProgress(comments.length, page);
+          const currentDescendants = filterDescendantReplies(allRawTweets, tweetId, conversationId);
+          await onProgress(currentDescendants.length, page);
         } catch (e) {
           // ignore progress update errors
         }
@@ -404,8 +435,7 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
       }
     } catch (err) {
       console.warn(`[TwitterAPI.io] Page ${page} failed:`, err.response?.data?.message || err.message);
-      // If we already got real comments from previous page, keep them!
-      if (comments.length > 0) {
+      if (allRawTweets.length > 0) {
         break;
       }
       if (err.response?.status === 402 || err.response?.data?.message?.includes('Credits is not enough')) {
@@ -418,7 +448,64 @@ async function fetchRepliesViaThirdParty(tweetId, postAuthor = null, maxPages = 
     }
   }
 
-  return comments;
+  // 1. Filter descendant replies under tweetId (strips ancestors and tweets from other branches)
+  const descendantTweets = filterDescendantReplies(allRawTweets, tweetId, conversationId);
+
+  // 2. Resolve post author
+  const resolvedAuthor = targetTweet?.author?.userName || postAuthor;
+  const normPostAuthor = resolvedAuthor ? String(resolvedAuthor).toLowerCase().replace(/^@/, '') : null;
+
+  const comments = [];
+  for (const tweet of descendantTweets) {
+    const author = tweet.author?.userName || tweet.userName || tweet.author?.username || 'user';
+    const normAuthor = String(author).toLowerCase().replace(/^@/, '');
+
+    // Exclude author's self-replies under their own post/comment
+    if (normPostAuthor && normPostAuthor !== 'i' && normAuthor === normPostAuthor) {
+      continue;
+    }
+
+    // Exclude nested sub-replies if EXCLUDE_NESTED_REPLIES is enabled
+    if (config.EXCLUDE_NESTED_REPLIES && !isDirectReply(tweet, tweetId, normPostAuthor)) {
+      continue;
+    }
+
+    const authorName = tweet.author?.name || tweet.name || author;
+    const rawUrl = tweet.url || tweet.twitterUrl || `https://x.com/${author}/status/${tweet.id}`;
+    const likes = Number(tweet.likeCount ?? tweet.likes ?? tweet.favoriteCount ?? tweet.favorite_count ?? 0);
+    const retweets = Number(tweet.retweetCount ?? tweet.retweets ?? 0);
+    const replies = Number(tweet.replyCount ?? tweet.replies ?? 0);
+    const views = Number(tweet.viewCount ?? tweet.views ?? 0);
+    const quotes = Number(tweet.quoteCount ?? tweet.quotes ?? 0);
+    const parentId = extractParentTweetId(tweet) || tweetId;
+
+    comments.push({
+      id: String(tweet.id),
+      author,
+      authorName,
+      text: tweet.text || '',
+      url: rawUrl.replace('twitter.com', 'x.com'),
+      likes,
+      retweets,
+      replies,
+      views,
+      quotes,
+      inReplyToStatusId: parentId,
+      engagement: likes + retweets + replies + quotes
+    });
+  }
+
+  const targetInfo = targetTweet ? {
+    id: String(targetTweet.id),
+    author: targetTweet.author?.userName || targetTweet.userName || null,
+    authorName: targetTweet.author?.name || targetTweet.name || null,
+    text: targetTweet.text || '',
+    isReply: Boolean(targetTweet.isReply || extractParentTweetId(targetTweet)),
+    conversationId: targetTweet.conversationId || conversationId || null,
+    inReplyToStatusId: extractParentTweetId(targetTweet)
+  } : null;
+
+  return { comments, targetInfo };
 }
 
 /**
@@ -531,9 +618,13 @@ async function getTweetComments(tweetId, postAuthorOrOnProgress = null, maybeOnP
         scanTimeoutMs,
         'TwitterAPI.io'
       );
-      if (results && results.length > 0) {
-        console.log(`[XService] Successfully retrieved ${results.length} comments for tweet ${tweetId}`);
-        return { comments: results };
+      if (results) {
+        const commentList = Array.isArray(results) ? results : (results.comments || []);
+        console.log(`[XService] Successfully retrieved ${commentList.length} comments for tweet ${tweetId}`);
+        return {
+          comments: commentList,
+          targetInfo: results.targetInfo || null
+        };
       }
       return { comments: [] };
     } catch (err) {
@@ -642,6 +733,7 @@ module.exports = {
   parseTweetUrl,
   extractParentTweetId,
   extractInReplyToScreenName,
+  filterDescendantReplies,
   isDirectReply,
   getTweetComments,
   getTweetInfo,

@@ -1,5 +1,5 @@
 const assert = require('assert');
-const { parseTweetUrl, generateMockComments, isDirectReply } = require('../src/services/xService');
+const { parseTweetUrl, generateMockComments, isDirectReply, filterDescendantReplies } = require('../src/services/xService');
 const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
@@ -177,7 +177,38 @@ assert.strictEqual(isDirectReply({ in_reply_to_status_id_str: '1000', in_reply_t
 assert.strictEqual(isDirectReply({ in_reply_to_status_id_str: '1000', in_reply_to_screen_name: 'random_guy' }, '1000', 'elonmusk'), false);
 assert.strictEqual(isDirectReply({ referenced_tweets: [{ type: 'replied_to', id: '2000' }] }, '1000'), false);
 assert.strictEqual(isDirectReply({ referenced_tweets: [{ type: 'replied_to', id: '1000' }] }, '1000'), true);
-console.log('  ✅ isDirectReply helper: verified parent status ID & in-reply-to username across schemas\n');
+console.log('  ✅ isDirectReply helper: verified parent status ID & in-reply-to username across schemas');
+
+// Case J: filterDescendantReplies subtree extraction
+const mockThread = [
+  { id: '100', inReplyToId: null, conversationId: '100', text: 'Root Tweet' },
+  { id: '101', inReplyToId: '100', conversationId: '100', text: 'Direct reply 1' },
+  { id: '102', inReplyToId: '101', conversationId: '100', text: 'Reply to 101' },
+  { id: '103', inReplyToId: '102', conversationId: '100', text: 'Reply to 102' },
+  { id: '104', inReplyToId: '100', conversationId: '100', text: 'Direct reply 2' },
+  { id: '105', inReplyToId: '104', conversationId: '100', text: 'Reply to 104' }
+];
+
+// When target is root post: all other tweets in the thread are replies
+const rootDescendants = filterDescendantReplies(mockThread, '100', '100');
+assert.strictEqual(rootDescendants.length, 5);
+assert.deepStrictEqual(rootDescendants.map(t => t.id), ['101', '102', '103', '104', '105']);
+
+// When target is comment 101: only descendants 102 and 103 are kept (root 100, sibling branch 104, 105 discarded)
+const comment101Descendants = filterDescendantReplies(mockThread, '101', '100');
+assert.strictEqual(comment101Descendants.length, 2);
+assert.deepStrictEqual(comment101Descendants.map(t => t.id), ['102', '103']);
+
+// When target is comment 102: only descendant 103 is kept
+const comment102Descendants = filterDescendantReplies(mockThread, '102', '100');
+assert.strictEqual(comment102Descendants.length, 1);
+assert.deepStrictEqual(comment102Descendants.map(t => t.id), ['103']);
+
+// When target is leaf comment 103: 0 descendants
+const leafDescendants = filterDescendantReplies(mockThread, '103', '100');
+assert.strictEqual(leafDescendants.length, 0);
+
+console.log('  ✅ filterDescendantReplies: verified subtree filtering for root tweets, parent comments, and leaf comments\n');
 
 // ----------------------------------------------------
 // 3. Test: Unbiased Randomization
@@ -342,7 +373,7 @@ assert(singleCommentRaid[0].includes('@crypto_raider'));
 assert(singleCommentRaid[0].includes('Try contradicting or asking questions'));
 console.log('  ✅ Single comment raid: activated direct target raid with link and reply vibe (0 sub-replies)');
 
-// Test 7B: Comment Raid with sub-replies
+// Test 7B: Comment Raid with sub-replies (treated as main post raid)
 const commentWithSubReplies = formatRaidMessages({
   targetUrl: 'https://x.com/crypto_raider/status/18900000001001',
   sampleResult: {
@@ -360,14 +391,14 @@ const commentWithSubReplies = formatRaidMessages({
   isComment: true
 });
 
-assert(commentWithSubReplies[0].includes('Target Comment'));
+assert(commentWithSubReplies[0].includes('Target Post'));
 assert(commentWithSubReplies[0].includes('Target Reply Vibe'));
 assert(commentWithSubReplies[0].includes('Play devil\'s advocate'));
-assert(commentWithSubReplies[0].includes('Sub-Replies:</b> 5'));
-assert(commentWithSubReplies[0].includes('Sub-Thread Targets'));
+assert(commentWithSubReplies[0].includes('Comments:</b> 5'));
+assert(commentWithSubReplies[0].includes('Target Comments to Raid'));
 assert(commentWithSubReplies[0].includes('@sub_user1'));
 assert(commentWithSubReplies[0].includes('Be sarcastic'));
-console.log('  ✅ Comment raid with sub-replies: renders target comment vibe + sub-thread comment vibes cleanly\n');
+console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post and Comments stats cleanly\n');
 
 // ----------------------------------------------------
 // 8. Test: Admin-Only Mentions & Command Protection

@@ -426,7 +426,7 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
           statusMsg.message_id,
           `⏳ <b>Scanning X Target...</b>\n` +
           `🎯 Target: <code>${escapeHtml(parsed.cleanUrl)}</code>\n` +
-          `📥 Discovered <b>${count}</b> direct comments so far (scanning page ${page})...`
+          `📥 Discovered <b>${count}</b> comments so far (scanning page ${page})...`
         );
       } catch (e) {
         // Ignore progress reporting errors
@@ -439,6 +439,20 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       const result = await getTweetComments(parsed.tweetId, postAuthor, onProgress);
       rawComments = result.comments || [];
       warning = result.warning || null;
+      if (result.targetInfo) {
+        if (!targetAuthor || targetAuthor === 'i') {
+          targetAuthor = result.targetInfo.author || targetAuthor;
+        }
+        if (result.targetInfo.authorName) {
+          targetAuthorName = result.targetInfo.authorName;
+        }
+        if (result.targetInfo.isReply !== undefined) {
+          isComment = result.targetInfo.isReply;
+        }
+        if (result.targetInfo.author) {
+          postAuthor = result.targetInfo.author.toLowerCase().replace(/^@/, '');
+        }
+      }
     } catch (fetchErr) {
       console.error('[Raid] Error while fetching comments:', fetchErr.message);
       // Re-throw so user gets transparent feedback about API status instead of silent blank output
@@ -470,7 +484,7 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
     } else {
       // If 0 comments found, check if the target was a comment/reply
-      if (!tweetInfo) {
+      if (!tweetInfo && !isComment) {
         try {
           tweetInfo = await getTweetInfo(parsed.tweetId);
           if (tweetInfo?.isReply) {
