@@ -1,20 +1,6 @@
 const config = require('../config');
 
 /**
- * Fisher-Yates (Knuth) shuffle algorithm for unbiased random permutation.
- * @param {Array} array 
- * @returns {Array} Shuffled array copy
- */
-function shuffleArray(array) {
-  const copy = [...array];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
-
-/**
  * Calculates total engagement / traction score for a comment.
  * Sum of likes, retweets, replies, and quotes.
  * 
@@ -32,24 +18,35 @@ function getEngagementScore(comment) {
 }
 
 /**
- * Picks a percentage (default 40%) of comments.
- * Prioritizes comments that gained traction first, and fills the remaining quota
- * randomly from the other comments so it ALWAYS delivers exactly 40% of total comments.
+ * Fisher-Yates (Knuth) shuffle algorithm.
+ * @param {Array} array 
+ * @returns {Array} Shuffled array copy
+ */
+function shuffleArray(array) {
+  const copy = [...array];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/**
+ * Selects the top comments with the highest engagement from the post (default: 10).
+ * Discovered comments are sorted in descending order of engagement score (likes + retweets + replies + quotes).
  * 
  * @param {Array<Object>} comments - Array of comment objects
- * @param {number} [percentage] - Desired percentage (1 - 100). Defaults to 40%.
- * @param {Object} [options] - Optional configurations
- * @returns {Object} Sample result with metadata and selected comment list
+ * @param {number} [limit=10] - Number of top comments to return (default: 10)
+ * @param {Object} [options] - Optional configurations (e.g. excludeAuthor)
+ * @returns {Object} Result with totalComments, targetLimit, selectedCount, and sorted selectedComments
  */
-function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT, options = {}) {
+function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 10, options = {}) {
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
     return {
       totalComments: 0,
-      tractionCommentsCount: 0,
-      samplePercentage: percentage,
+      targetLimit: limit,
       selectedCount: 0,
-      selectedComments: [],
-      filterApplied: false
+      selectedComments: []
     };
   }
 
@@ -63,56 +60,46 @@ function pickCommentsSample(comments, percentage = config.DEFAULT_SAMPLE_PERCENT
   if (poolComments.length === 0) {
     return {
       totalComments: 0,
-      tractionCommentsCount: 0,
-      samplePercentage: percentage,
+      targetLimit: limit,
       selectedCount: 0,
-      selectedComments: [],
-      filterApplied: false
+      selectedComments: []
     };
   }
 
-  // Ensure percentage is bounded between 1 and 100
-  const validPercentage = Math.min(100, Math.max(1, percentage));
+  const targetLimit = Math.max(1, parseInt(limit, 10) || 10);
 
-  // ALWAYS calculate target count from total comments (guaranteeing exact percentage)
-  const targetCount = Math.max(1, Math.round(poolComments.length * (validPercentage / 100)));
+  // Sort descending by highest engagement score
+  // Tie-breaker 1: likes, Tie-breaker 2: views
+  const sorted = [...poolComments].sort((a, b) => {
+    const scoreDiff = getEngagementScore(b) - getEngagementScore(a);
+    if (scoreDiff !== 0) return scoreDiff;
+    const likesDiff = (Number(b.likes) || 0) - (Number(a.likes) || 0);
+    if (likesDiff !== 0) return likesDiff;
+    return (Number(b.views) || 0) - (Number(a.views) || 0);
+  });
 
-  // Separate comments that gained traction from the rest
-  const tractionComments = poolComments.filter(c => getEngagementScore(c) > 0);
-  const nonTractionComments = poolComments.filter(c => getEngagementScore(c) === 0);
-
-  let selected = [];
-
-  if (tractionComments.length >= targetCount) {
-    // If we have enough traction comments, randomly select targetCount from them
-    const shuffledTraction = shuffleArray(tractionComments);
-    selected = shuffledTraction.slice(0, targetCount);
-  } else {
-    // Take all available traction comments
-    selected = [...tractionComments];
-
-    // Fill the remainder of the 40% quota randomly from non-traction comments
-    const needed = targetCount - selected.length;
-    const shuffledNonTraction = shuffleArray(nonTractionComments);
-    const filler = shuffledNonTraction.slice(0, needed);
-    selected.push(...filler);
-  }
-
-  // Shuffle final selection so raiders get a distributed mix
-  const finalSelectedComments = shuffleArray(selected);
+  const selected = sorted.slice(0, targetLimit);
 
   return {
     totalComments: poolComments.length,
-    tractionCommentsCount: tractionComments.length,
-    samplePercentage: validPercentage,
-    selectedCount: finalSelectedComments.length,
-    selectedComments: finalSelectedComments,
-    filterApplied: tractionComments.length > 0
+    targetLimit,
+    selectedCount: selected.length,
+    selectedComments: selected
   };
+}
+
+/**
+ * Backward-compatibility alias: calls pickTopEngagementComments.
+ * If a custom limit is provided, uses it.
+ */
+function pickCommentsSample(comments, countOrPercent = 10, options = {}) {
+  const limit = typeof countOrPercent === 'number' && countOrPercent > 0 ? countOrPercent : (config.TOP_COMMENTS_LIMIT || 10);
+  return pickTopEngagementComments(comments, limit, options);
 }
 
 module.exports = {
   getEngagementScore,
+  pickTopEngagementComments,
   pickCommentsSample,
   shuffleArray
 };

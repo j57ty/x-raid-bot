@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { parseTweetUrl, generateMockComments, isDirectReply, filterDescendantReplies } = require('../src/services/xService');
-const { pickCommentsSample, shuffleArray } = require('../src/services/sampler');
+const { pickTopEngagementComments, pickCommentsSample, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
@@ -52,11 +52,11 @@ assert.strictEqual(parseTweetUrl('invalid url'), null);
 console.log('  ✅ Non-X URLs correctly rejected\n');
 
 // ----------------------------------------------------
-// 2. Test: 40% Comment Sampling Logic & Traction Filtering
+// 2. Test: Top 10 Highest Engagement Comments Selection
 // ----------------------------------------------------
-console.log('Test 2: pickCommentsSample (Traction Filtering & 40% rule)');
+console.log('Test 2: pickTopEngagementComments (Top 10 Highest Engagement Selection)');
 
-// Case A: 100 comments where all have traction -> exactly 40 selected
+// Case A: 100 comments with varied engagement -> exactly top 10 selected, sorted descending
 const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
   id: `tweet_${i}`,
   author: `user_${i}`,
@@ -68,90 +68,69 @@ const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
   engagement: i + 2
 }));
 
-const sampleAllTraction = pickCommentsSample(allTractionMock, 40);
+const sampleAllTraction = pickTopEngagementComments(allTractionMock, 10);
 assert.strictEqual(sampleAllTraction.totalComments, 100);
-assert.strictEqual(sampleAllTraction.tractionCommentsCount, 100);
-assert.strictEqual(sampleAllTraction.selectedCount, 40);
-assert.strictEqual(sampleAllTraction.selectedComments.length, 40);
-console.log(`  ✅ 100 comments (all traction): selected ${sampleAllTraction.selectedCount} (40%)`);
-
-// Case B: 100 comments where 60 have traction, 40 have zero engagement
-// Traction comments (60) >= 40% quota (40), so exactly 40 selected
-const mixedMock = generateMockComments('1000000', 100);
-const sampleMixed = pickCommentsSample(mixedMock, 40);
-assert.strictEqual(sampleMixed.totalComments, 100);
-assert.strictEqual(sampleMixed.selectedCount, 40);
-assert.strictEqual(sampleMixed.selectedComments.length, 40);
-console.log(`  ✅ Mixed pool: selected exactly ${sampleMixed.selectedCount} (40% of 100)`);
-
-// Case C: 50 comments where only 5 have traction (fewer than 40% quota = 20)
-// Must take all 5 traction comments + 15 random other comments = exactly 20 comments (40%)
-const fewTractionMock = [
-  ...Array.from({ length: 5 }, (_, i) => ({
-    id: `traction_${i}`,
-    author: `user_${i}`,
-    url: `https://x.com/user_${i}/status/traction_${i}`,
-    likes: 10,
-    retweets: 2,
-    replies: 1
-  })),
-  ...Array.from({ length: 45 }, (_, i) => ({
-    id: `zero_${i}`,
-    author: `zero_${i}`,
-    url: `https://x.com/zero_${i}/status/zero_${i}`,
-    likes: 0,
-    retweets: 0,
-    replies: 0
-  }))
-];
-const sampleFew = pickCommentsSample(fewTractionMock, 40);
-assert.strictEqual(sampleFew.totalComments, 50);
-assert.strictEqual(sampleFew.selectedCount, 20); // 40% of 50 = exactly 20!
-assert.strictEqual(sampleFew.selectedComments.length, 20);
-// Verify all 5 traction comments were included
-const selectedIds = new Set(sampleFew.selectedComments.map(c => c.id));
-for (let i = 0; i < 5; i++) {
-  assert(selectedIds.has(`traction_${i}`), `Traction comment traction_${i} must be included`);
+assert.strictEqual(sampleAllTraction.selectedCount, 10);
+assert.strictEqual(sampleAllTraction.selectedComments.length, 10);
+// Verify they are the top 10 (ids: tweet_99 down to tweet_90)
+assert.strictEqual(sampleAllTraction.selectedComments[0].id, 'tweet_99');
+assert.strictEqual(sampleAllTraction.selectedComments[9].id, 'tweet_90');
+// Verify descending sort order
+for (let i = 0; i < sampleAllTraction.selectedComments.length - 1; i++) {
+  assert(sampleAllTraction.selectedComments[i].engagement >= sampleAllTraction.selectedComments[i + 1].engagement);
 }
-console.log(`  ✅ Few traction pool: prioritized all 5 traction comments and filled up to exactly 20 (40% of 50)`);
+console.log(`  ✅ 100 comments: selected top ${sampleAllTraction.selectedCount} highest engagement comments sorted descending`);
 
-// Case D: When 0 comments have traction (all 0 engagement)
-// Still delivers exactly 40% of total comments
-const zeroTractionMock = Array.from({ length: 20 }, (_, i) => ({
-  id: `zero_${i}`,
-  author: `user_${i}`,
-  url: `https://x.com/user_${i}/status/zero_${i}`,
-  likes: 0,
-  retweets: 0,
-  replies: 0,
-  quotes: 0,
-  engagement: 0
-}));
-const sampleZero = pickCommentsSample(zeroTractionMock, 40);
-assert.strictEqual(sampleZero.totalComments, 20);
-assert.strictEqual(sampleZero.selectedCount, 8); // 40% of 20 = exactly 8!
-assert.strictEqual(sampleZero.selectedComments.length, 8);
-console.log(`  ✅ Zero traction pool: delivered exactly ${sampleZero.selectedCount} (40% of 20)`);
+// Case B: Mixed pool using generateMockComments -> exactly top 10 selected
+const mixedMock = generateMockComments('1000000', 100);
+const sampleMixed = pickTopEngagementComments(mixedMock, 10);
+assert.strictEqual(sampleMixed.totalComments, 100);
+assert.strictEqual(sampleMixed.selectedCount, 10);
+assert.strictEqual(sampleMixed.selectedComments.length, 10);
+for (let i = 0; i < sampleMixed.selectedComments.length - 1; i++) {
+  const current = sampleMixed.selectedComments[i].engagement ?? (sampleMixed.selectedComments[i].likes + sampleMixed.selectedComments[i].retweets);
+  const next = sampleMixed.selectedComments[i + 1].engagement ?? (sampleMixed.selectedComments[i + 1].likes + sampleMixed.selectedComments[i + 1].retweets);
+  assert(current >= next);
+}
+console.log(`  ✅ Mixed pool: selected top ${sampleMixed.selectedCount} comments with highest engagement`);
 
-// Case E: 1 comment -> 1 selected (at least 1)
+// Case C: Small pool (< 10 comments, e.g. 5 comments) -> returns all 5 sorted by engagement
+const smallMock = [
+  { id: '1', author: 'u1', likes: 10, retweets: 2, engagement: 12 },
+  { id: '2', author: 'u2', likes: 50, retweets: 10, engagement: 60 },
+  { id: '3', author: 'u3', likes: 2, retweets: 0, engagement: 2 },
+  { id: '4', author: 'u4', likes: 25, retweets: 5, engagement: 30 },
+  { id: '5', author: 'u5', likes: 100, retweets: 20, engagement: 120 }
+];
+const sampleSmall = pickTopEngagementComments(smallMock, 10);
+assert.strictEqual(sampleSmall.totalComments, 5);
+assert.strictEqual(sampleSmall.selectedCount, 5);
+assert.strictEqual(sampleSmall.selectedComments[0].id, '5'); // highest engagement (120)
+assert.strictEqual(sampleSmall.selectedComments[1].id, '2'); // (60)
+assert.strictEqual(sampleSmall.selectedComments[2].id, '4'); // (30)
+assert.strictEqual(sampleSmall.selectedComments[3].id, '1'); // (12)
+assert.strictEqual(sampleSmall.selectedComments[4].id, '3'); // (2)
+console.log(`  ✅ Small pool (5 comments): returns all 5 sorted strictly from highest to lowest engagement`);
+
+// Case D: 1 comment -> 1 selected
 const singleMock = [{ id: '1', author: 'solo', url: 'https://x.com/solo/status/1', likes: 5, retweets: 1 }];
-const sample1 = pickCommentsSample(singleMock, 40);
+const sample1 = pickTopEngagementComments(singleMock, 10);
 assert.strictEqual(sample1.selectedCount, 1);
 console.log(`  ✅ 1 comment: selected ${sample1.selectedCount}`);
 
-// Case F: 0 comments
-const sample0 = pickCommentsSample([], 40);
+// Case E: 0 comments -> 0 selected
+const sample0 = pickTopEngagementComments([], 10);
 assert.strictEqual(sample0.selectedCount, 0);
 console.log(`  ✅ 0 comments: selected 0`);
 
-// Case G: Post author exclusion
+// Case F: Post author exclusion
 const authorPool = [
-  { id: 'auth_1', author: 'elonmusk', url: 'https://x.com/elonmusk/status/1', likes: 100 },
-  { id: 'auth_2', author: 'ElonMusk', url: 'https://x.com/ElonMusk/status/2', likes: 50 },
-  { id: 'user_1', author: 'supporter_1', url: 'https://x.com/supporter_1/status/3', likes: 10 },
-  { id: 'user_2', author: 'supporter_2', url: 'https://x.com/supporter_2/status/4', likes: 5 }
+  { id: 'auth_1', author: 'elonmusk', url: 'https://x.com/elonmusk/status/1', likes: 100, engagement: 100 },
+  { id: 'auth_2', author: 'ElonMusk', url: 'https://x.com/ElonMusk/status/2', likes: 50, engagement: 50 },
+  { id: 'user_1', author: 'supporter_1', url: 'https://x.com/supporter_1/status/3', likes: 10, engagement: 10 },
+  { id: 'user_2', author: 'supporter_2', url: 'https://x.com/supporter_2/status/4', likes: 5, engagement: 5 }
 ];
-const sampleAuthorExclusion = pickCommentsSample(authorPool, 100, { excludeAuthor: 'elonmusk' });
+const sampleAuthorExclusion = pickTopEngagementComments(authorPool, 10, { excludeAuthor: 'elonmusk' });
 assert.strictEqual(sampleAuthorExclusion.totalComments, 2);
 assert.strictEqual(sampleAuthorExclusion.selectedCount, 2);
 for (const c of sampleAuthorExclusion.selectedComments) {
@@ -211,16 +190,18 @@ assert.strictEqual(leafDescendants.length, 0);
 console.log('  ✅ filterDescendantReplies: verified subtree filtering for root tweets, parent comments, and leaf comments\n');
 
 // ----------------------------------------------------
-// 3. Test: Unbiased Randomization
+// 3. Test: Deterministic Top-Ranked Order & Shuffle Utility
 // ----------------------------------------------------
-console.log('Test 3: Unbiased Randomization');
-const sampleA = pickCommentsSample(mixedMock, 40);
-const sampleB = pickCommentsSample(mixedMock, 40);
-// Two random 40% samples should not be identical in order
+console.log('Test 3: Deterministic Top-Ranked Order & Shuffle Utility');
+const sampleA = pickTopEngagementComments(mixedMock, 10);
+const sampleB = pickTopEngagementComments(mixedMock, 10);
 const idsA = sampleA.selectedComments.map(c => c.id).join(',');
 const idsB = sampleB.selectedComments.map(c => c.id).join(',');
-assert.notStrictEqual(idsA, idsB, 'Random samples should vary between runs');
-console.log('  ✅ Random sampling produces distinct shuffled selections\n');
+assert.strictEqual(idsA, idsB, 'Top engagement ranking must be deterministic and ordered');
+
+const shuffled = shuffleArray([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+assert.strictEqual(shuffled.length, 10);
+console.log('  ✅ Top engagement comments are consistently ranked by engagement score\n');
 
 // ----------------------------------------------------
 // 4. Test: Message Formatting & Direct Comment Links (No Member Tagging on /raid)

@@ -2,7 +2,7 @@ const { Bot } = require('grammy');
 const config = require('./config');
 const { requireGroupAdmin, enforceAdminOnlyMiddleware } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments, getTweetInfo } = require('./services/xService');
-const { pickCommentsSample } = require('./services/sampler');
+const { pickTopEngagementComments, pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments, getTargetVibe } = require('./services/anglesGenerator');
 const memberStore = require('./services/memberStore');
@@ -76,12 +76,12 @@ async function safeReply(ctx, text, options = {}) {
 bot.command(['start', 'help'], requireGroupAdmin, async (ctx) => {
   const welcomeMessage = 
     `🤖 <b>X Raid Telegram Bot</b>\n\n` +
-    `This bot extracts comments from any X (Twitter) post or comment, selects <b>40% of the comments randomly</b>, ` +
+    `This bot extracts comments from any X (Twitter) post or comment, selects the <b>10 comments with the highest engagement</b>, ` +
     `and delivers direct links to the group with actionable reply vibes for raiders to execute.\n\n` +
     `🔒 <b>Security:</b> Only group administrators are permitted to tag or trigger this bot.\n\n` +
     `📌 <b>Admin Commands:</b>\n` +
-    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (selects 40% of comments by default)\n` +
-    `• <code>/raid &lt;X_LINK&gt; &lt;PERCENT&gt;</code> — Raid with custom percentage\n` +
+    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (targets top 10 highest engagement comments)\n` +
+    `• <code>/raid &lt;X_LINK&gt; [count]</code> — Raid with custom target count (e.g. <code>/raid &lt;url&gt; 5</code>)\n` +
     `• <code>/raid &lt;X_LINK&gt; focus: your theme</code> — Raid with custom mission focus\n` +
     `• <code>/angles [custom focus]</code> — Preview lively suggested reply vibes\n` +
     `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
@@ -111,7 +111,7 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
     `📊 <b>Bot Status Report</b>\n\n` +
     `• <b>Uptime:</b> ${uptimeMinutes} minutes\n` +
     `• <b>X Data Source:</b> ${escapeHtml(modeStatus)}\n` +
-    `• <b>Default Sample Rate:</b> ${config.DEFAULT_SAMPLE_PERCENT}%\n` +
+    `• <b>Target Selection:</b> Top ${config.TOP_COMMENTS_LIMIT} highest engagement comments\n` +
     `• <b>Auto-delete warnings:</b> ${config.DELETE_WARNING_AFTER_SECONDS}s\n` +
     `• <b>Group Pinning:</b> ${config.PIN_RAID_MESSAGE ? 'Enabled' : 'Disabled'}\n` +
     `• <b>Bot Permissions:</b> Admin in this chat ✅`;
@@ -478,8 +478,9 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
 
     let sampleResult;
     if (comments.length > 0) {
-      // 2. Select 40% (or requested percent) prioritizing traction comments
-      sampleResult = pickCommentsSample(comments, samplePercent, { excludeAuthor: postAuthor });
+      // 2. Select top 10 comments with highest engagement (or custom limit if specified)
+      const targetLimit = inputPercent ? parseInt(inputPercent, 10) : config.TOP_COMMENTS_LIMIT;
+      sampleResult = pickTopEngagementComments(comments, targetLimit, { excludeAuthor: postAuthor });
       // 3. Attach lively, thread-igniting reply vibes per comment
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
     } else {
@@ -624,9 +625,9 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       `**Method 1:** Send with URL:\n` +
       `\`/raid https://x.com/username/status/1890000000000000000\`\n\n` +
       `**Method 2:** Reply to any message containing an X link with \`/raid\`!\n\n` +
-      `**Optional custom percentage:** \`/raid <url> 50\` (defaults to 40%)\n` +
+      `**Optional custom count:** \`/raid <url> 5\` (defaults to top 10 highest engagement)\n` +
       `**Optional custom focus:** \`/raid <url> focus: challenge them on gas fees\`\n` +
-      `**Combined:** \`/raid <url> 50 focus: ask when mainnet drops\``,
+      `**Combined:** \`/raid <url> 15 focus: ask when mainnet drops\``,
       { parse_mode: 'Markdown' }
     );
     return;
@@ -684,7 +685,7 @@ bot.start({
     console.log(`===============================================`);
     console.log(`🚀 X Raid Bot is running as @${botInfo.username}`);
     console.log(`🔒 Admin protection: ACTIVE`);
-    console.log(`🎯 Default comment sample: ${config.DEFAULT_SAMPLE_PERCENT}%`);
+    console.log(`🎯 Target selection: Top ${config.TOP_COMMENTS_LIMIT} highest engagement comments`);
     console.log(`===============================================`);
     await registerBotCommands();
   }

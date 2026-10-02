@@ -93,7 +93,7 @@ function formatRaidMessages({
       if (targetVibe) {
         msg += `💬 <b>Target Reply Vibe:</b> <i>${escapeHtml(targetVibe)}</i>\n`;
       }
-      msg += `📊 <b>Comments:</b> ${totalComments} | <b>Raid Targets (${samplePercentage}%):</b> ${selectedCount}\n\n`;
+      msg += `📊 <b>Comments:</b> ${totalComments} | <b>Top Engagement Targets:</b> ${selectedCount}\n\n`;
       msg += `👇 <b>Target Comments to Raid (with Reply Vibes):</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
