@@ -32,20 +32,86 @@ function shuffleArray(array) {
 }
 
 /**
- * Selects the top comments with the highest engagement from the post (default: 10).
+ * Organically distributes total raiders across a list of comments.
+ * Higher engagement comments receive a higher share while maintaining organic random variance,
+ * ensuring every comment gets at least 1 raider and the total sum matches totalRaiders exactly.
+ * 
+ * @param {number} totalRaiders - Total number of participating raiders (default: 64)
+ * @param {number} count - Number of comments to distribute across (default: 20)
+ * @returns {Array<number>} Array of raider allocations per comment
+ */
+function distributeRaiders(totalRaiders = config.TOTAL_RAIDERS || 64, count = config.TOP_COMMENTS_LIMIT || 20) {
+  if (count <= 0) return [];
+  if (count === 1) return [totalRaiders];
+  if (totalRaiders < count) {
+    const res = new Array(count).fill(0);
+    for (let i = 0; i < totalRaiders; i++) res[i] = 1;
+    return res;
+  }
+
+  const alloc = new Array(count).fill(1);
+  let remaining = totalRaiders - count;
+
+  const weights = [];
+  for (let i = 0; i < count; i++) {
+    const rankFactor = 0.4 + (4.0 * Math.pow((count - i) / count, 1.8));
+    const noise = 0.6 + Math.random() * 1.4;
+    weights.push(rankFactor * noise);
+  }
+
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+  let distributed = 0;
+  const additions = weights.map(w => {
+    const share = Math.floor((w / totalWeight) * remaining);
+    distributed += share;
+    return share;
+  });
+
+  let leftOver = remaining - distributed;
+  while (leftOver > 0) {
+    const r = Math.random() * totalWeight;
+    let acc = 0;
+    let pickedIdx = 0;
+    for (let i = 0; i < count; i++) {
+      acc += weights[i];
+      if (r <= acc) {
+        pickedIdx = i;
+        break;
+      }
+    }
+    additions[pickedIdx]++;
+    leftOver--;
+  }
+
+  for (let i = 0; i < count; i++) {
+    alloc[i] += additions[i];
+  }
+
+  return alloc;
+}
+
+/**
+ * Selects the top comments with the highest engagement from the post (default: 20).
  * Discovered comments are sorted in descending order of engagement score (likes + retweets + replies + quotes).
+ * Also splits the participating raiders (default: 64) organically across the selected comments.
  * 
  * @param {Array<Object>} comments - Array of comment objects
- * @param {number} [limit=10] - Number of top comments to return (default: 10)
- * @param {Object} [options] - Optional configurations (e.g. excludeAuthor)
- * @returns {Object} Result with totalComments, targetLimit, selectedCount, and sorted selectedComments
+ * @param {number} [limit=20] - Number of top comments to return (default: 20)
+ * @param {Object} [options] - Optional configurations (e.g. excludeAuthor, totalRaiders)
+ * @returns {Object} Result with totalComments, targetLimit, selectedCount, totalRaiders, and sorted selectedComments with assignedRaiders
  */
-function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 10, options = {}) {
+function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 20, options = {}) {
+  const totalRaiders = typeof options.totalRaiders === 'number' && options.totalRaiders > 0
+    ? options.totalRaiders
+    : (config.TOTAL_RAIDERS || 64);
+
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
     return {
       totalComments: 0,
       targetLimit: limit,
       selectedCount: 0,
+      totalRaiders,
       selectedComments: []
     };
   }
@@ -62,11 +128,12 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
       totalComments: 0,
       targetLimit: limit,
       selectedCount: 0,
+      totalRaiders,
       selectedComments: []
     };
   }
 
-  const targetLimit = Math.max(1, parseInt(limit, 10) || 10);
+  const targetLimit = Math.max(1, parseInt(limit, 10) || 20);
 
   // Sort descending by highest engagement score
   // Tie-breaker 1: likes, Tie-breaker 2: views
@@ -80,10 +147,17 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
 
   const selected = sorted.slice(0, targetLimit);
 
+  // Organically split participating raiders across selected comments
+  const allocations = distributeRaiders(totalRaiders, selected.length);
+  for (let i = 0; i < selected.length; i++) {
+    selected[i].assignedRaiders = allocations[i];
+  }
+
   return {
     totalComments: poolComments.length,
     targetLimit,
     selectedCount: selected.length,
+    totalRaiders,
     selectedComments: selected
   };
 }
@@ -92,8 +166,8 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
  * Backward-compatibility alias: calls pickTopEngagementComments.
  * If a custom limit is provided, uses it.
  */
-function pickCommentsSample(comments, countOrPercent = 10, options = {}) {
-  const limit = typeof countOrPercent === 'number' && countOrPercent > 0 ? countOrPercent : (config.TOP_COMMENTS_LIMIT || 10);
+function pickCommentsSample(comments, countOrPercent = 20, options = {}) {
+  const limit = typeof countOrPercent === 'number' && countOrPercent > 0 ? countOrPercent : (config.TOP_COMMENTS_LIMIT || 20);
   return pickTopEngagementComments(comments, limit, options);
 }
 
@@ -101,5 +175,6 @@ module.exports = {
   getEngagementScore,
   pickTopEngagementComments,
   pickCommentsSample,
+  distributeRaiders,
   shuffleArray
 };

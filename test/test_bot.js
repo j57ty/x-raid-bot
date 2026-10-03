@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { parseTweetUrl, generateMockComments, isDirectReply, filterDescendantReplies } = require('../src/services/xService');
-const { pickTopEngagementComments, pickCommentsSample, shuffleArray } = require('../src/services/sampler');
+const { pickTopEngagementComments, pickCommentsSample, distributeRaiders, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
@@ -52,11 +52,11 @@ assert.strictEqual(parseTweetUrl('invalid url'), null);
 console.log('  ✅ Non-X URLs correctly rejected\n');
 
 // ----------------------------------------------------
-// 2. Test: Top 10 Highest Engagement Comments Selection
+// 2. Test: Top Engagement Comments Selection & Organic Raider Distribution
 // ----------------------------------------------------
-console.log('Test 2: pickTopEngagementComments (Top 10 Highest Engagement Selection)');
+console.log('Test 2: pickTopEngagementComments & distributeRaiders (20 Comments Default, 64 Raiders Split)');
 
-// Case A: 100 comments with varied engagement -> exactly top 10 selected, sorted descending
+// Case A: Default selection returns 20 comments when pool has >= 20 comments
 const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
   id: `tweet_${i}`,
   author: `user_${i}`,
@@ -68,25 +68,57 @@ const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
   engagement: i + 2
 }));
 
-const sampleAllTraction = pickTopEngagementComments(allTractionMock, 10);
-assert.strictEqual(sampleAllTraction.totalComments, 100);
-assert.strictEqual(sampleAllTraction.selectedCount, 10);
-assert.strictEqual(sampleAllTraction.selectedComments.length, 10);
-// Verify they are the top 10 (ids: tweet_99 down to tweet_90)
-assert.strictEqual(sampleAllTraction.selectedComments[0].id, 'tweet_99');
-assert.strictEqual(sampleAllTraction.selectedComments[9].id, 'tweet_90');
-// Verify descending sort order
-for (let i = 0; i < sampleAllTraction.selectedComments.length - 1; i++) {
-  assert(sampleAllTraction.selectedComments[i].engagement >= sampleAllTraction.selectedComments[i + 1].engagement);
+const sampleDefault = pickTopEngagementComments(allTractionMock);
+assert.strictEqual(sampleDefault.totalComments, 100);
+assert.strictEqual(sampleDefault.selectedCount, 20, 'Default selection limit should be 20');
+assert.strictEqual(sampleDefault.selectedComments.length, 20);
+assert.strictEqual(sampleDefault.totalRaiders, 64, 'Default total raiders should be 64');
+// Verify sorted descending
+assert.strictEqual(sampleDefault.selectedComments[0].id, 'tweet_99');
+assert.strictEqual(sampleDefault.selectedComments[19].id, 'tweet_80');
+for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
+  assert(sampleDefault.selectedComments[i].engagement >= sampleDefault.selectedComments[i + 1].engagement);
 }
-console.log(`  ✅ 100 comments: selected top ${sampleAllTraction.selectedCount} highest engagement comments sorted descending`);
+// Verify raiders were assigned to each comment and sum equals 64
+let totalAssigned = 0;
+for (const c of sampleDefault.selectedComments) {
+  assert(typeof c.assignedRaiders === 'number' && c.assignedRaiders >= 1, 'Each comment must have at least 1 raider assigned');
+  totalAssigned += c.assignedRaiders;
+}
+assert.strictEqual(totalAssigned, 64, 'Total assigned raiders must equal 64');
+console.log(`  ✅ Default 20 comments selected and 64 raiders distributed organically (sum = ${totalAssigned})`);
 
-// Case B: Mixed pool using generateMockComments -> exactly top 10 selected
+// Case B: Explicit limit (e.g. 10)
+const sample10 = pickTopEngagementComments(allTractionMock, 10);
+assert.strictEqual(sample10.selectedCount, 10);
+assert.strictEqual(sample10.selectedComments.length, 10);
+assert.strictEqual(sample10.selectedComments.reduce((acc, c) => acc + c.assignedRaiders, 0), 64);
+console.log(`  ✅ Explicit limit 10: selected top 10 with 64 raiders distributed`);
+
+// Case C: distributeRaiders unit tests
+const dist20 = distributeRaiders(64, 20);
+assert.strictEqual(dist20.length, 20);
+assert.strictEqual(dist20.reduce((a, b) => a + b, 0), 64);
+assert(dist20.every(n => n >= 1), 'Every comment receives at least 1 raider');
+assert(dist20[0] > dist20[19], 'Top engagement comments receive higher allocations than lower ranked comments');
+console.log(`  ✅ distributeRaiders(64, 20): allocations sample: [${dist20.slice(0, 5).join(', ')}, ...] -> sum = ${dist20.reduce((a, b) => a + b, 0)}`);
+
+// Edge case: single comment receives all 64 raiders
+assert.deepStrictEqual(distributeRaiders(64, 1), [64]);
+// Edge case: 5 comments
+const dist5 = distributeRaiders(64, 5);
+assert.strictEqual(dist5.length, 5);
+assert.strictEqual(dist5.reduce((a, b) => a + b, 0), 64);
+// Edge case: 0 comments
+assert.deepStrictEqual(distributeRaiders(64, 0), []);
+console.log('  ✅ distributeRaiders edge cases: 1 comment ([64]), 5 comments (sum = 64), 0 comments ([])');
+
+// Case D: Mixed pool using generateMockComments -> top 20 selected
 const mixedMock = generateMockComments('1000000', 100);
-const sampleMixed = pickTopEngagementComments(mixedMock, 10);
+const sampleMixed = pickTopEngagementComments(mixedMock, 20);
 assert.strictEqual(sampleMixed.totalComments, 100);
-assert.strictEqual(sampleMixed.selectedCount, 10);
-assert.strictEqual(sampleMixed.selectedComments.length, 10);
+assert.strictEqual(sampleMixed.selectedCount, 20);
+assert.strictEqual(sampleMixed.selectedComments.length, 20);
 for (let i = 0; i < sampleMixed.selectedComments.length - 1; i++) {
   const current = sampleMixed.selectedComments[i].engagement ?? (sampleMixed.selectedComments[i].likes + sampleMixed.selectedComments[i].retweets);
   const next = sampleMixed.selectedComments[i + 1].engagement ?? (sampleMixed.selectedComments[i + 1].likes + sampleMixed.selectedComments[i + 1].retweets);
@@ -94,7 +126,7 @@ for (let i = 0; i < sampleMixed.selectedComments.length - 1; i++) {
 }
 console.log(`  ✅ Mixed pool: selected top ${sampleMixed.selectedCount} comments with highest engagement`);
 
-// Case C: Small pool (< 10 comments, e.g. 5 comments) -> returns all 5 sorted by engagement
+// Case E: Small pool (< 20 comments, e.g. 5 comments) -> returns all 5 sorted by engagement
 const smallMock = [
   { id: '1', author: 'u1', likes: 10, retweets: 2, engagement: 12 },
   { id: '2', author: 'u2', likes: 50, retweets: 10, engagement: 60 },
@@ -102,7 +134,7 @@ const smallMock = [
   { id: '4', author: 'u4', likes: 25, retweets: 5, engagement: 30 },
   { id: '5', author: 'u5', likes: 100, retweets: 20, engagement: 120 }
 ];
-const sampleSmall = pickTopEngagementComments(smallMock, 10);
+const sampleSmall = pickTopEngagementComments(smallMock, 20);
 assert.strictEqual(sampleSmall.totalComments, 5);
 assert.strictEqual(sampleSmall.selectedCount, 5);
 assert.strictEqual(sampleSmall.selectedComments[0].id, '5'); // highest engagement (120)
@@ -110,27 +142,29 @@ assert.strictEqual(sampleSmall.selectedComments[1].id, '2'); // (60)
 assert.strictEqual(sampleSmall.selectedComments[2].id, '4'); // (30)
 assert.strictEqual(sampleSmall.selectedComments[3].id, '1'); // (12)
 assert.strictEqual(sampleSmall.selectedComments[4].id, '3'); // (2)
-console.log(`  ✅ Small pool (5 comments): returns all 5 sorted strictly from highest to lowest engagement`);
+assert.strictEqual(sampleSmall.selectedComments.reduce((acc, c) => acc + c.assignedRaiders, 0), 64);
+console.log(`  ✅ Small pool (5 comments): returns all 5 sorted with 64 raiders distributed`);
 
-// Case D: 1 comment -> 1 selected
+// Case F: 1 comment -> 1 selected
 const singleMock = [{ id: '1', author: 'solo', url: 'https://x.com/solo/status/1', likes: 5, retweets: 1 }];
-const sample1 = pickTopEngagementComments(singleMock, 10);
+const sample1 = pickTopEngagementComments(singleMock, 20);
 assert.strictEqual(sample1.selectedCount, 1);
-console.log(`  ✅ 1 comment: selected ${sample1.selectedCount}`);
+assert.strictEqual(sample1.selectedComments[0].assignedRaiders, 64);
+console.log(`  ✅ 1 comment: selected 1 with 64 raiders assigned`);
 
-// Case E: 0 comments -> 0 selected
-const sample0 = pickTopEngagementComments([], 10);
+// Case G: 0 comments -> 0 selected
+const sample0 = pickTopEngagementComments([], 20);
 assert.strictEqual(sample0.selectedCount, 0);
 console.log(`  ✅ 0 comments: selected 0`);
 
-// Case F: Post author exclusion
+// Case H: Post author exclusion
 const authorPool = [
   { id: 'auth_1', author: 'elonmusk', url: 'https://x.com/elonmusk/status/1', likes: 100, engagement: 100 },
   { id: 'auth_2', author: 'ElonMusk', url: 'https://x.com/ElonMusk/status/2', likes: 50, engagement: 50 },
   { id: 'user_1', author: 'supporter_1', url: 'https://x.com/supporter_1/status/3', likes: 10, engagement: 10 },
   { id: 'user_2', author: 'supporter_2', url: 'https://x.com/supporter_2/status/4', likes: 5, engagement: 5 }
 ];
-const sampleAuthorExclusion = pickTopEngagementComments(authorPool, 10, { excludeAuthor: 'elonmusk' });
+const sampleAuthorExclusion = pickTopEngagementComments(authorPool, 20, { excludeAuthor: 'elonmusk' });
 assert.strictEqual(sampleAuthorExclusion.totalComments, 2);
 assert.strictEqual(sampleAuthorExclusion.selectedCount, 2);
 for (const c of sampleAuthorExclusion.selectedComments) {
@@ -218,9 +252,11 @@ console.log(`  ✅ Formatted into ${formattedRaid.length} chunked messages (resp
 assert(formattedRaid[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
 assert(formattedRaid[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
 assert(formattedRaid[0].includes('<code>https://x.com/')); // Direct comment links are included
+assert(formattedRaid[0].includes('Squad:</b> 64 Raiders Distributed'), 'Header must display squad raiders distributed');
+assert(formattedRaid[0].includes('<b>(+'), 'Comments must include organic raider badge (+X)');
 assert(!formattedRaid.some(m => m.includes('Raiders:'))); // No raider tags in /raid
 assert(!formattedRaid.some(m => m.includes('👉 @'))); // No member tagging suffix on comments
-console.log('  ✅ /raid message structure delivers clean comment links without tagging members (tagging reserved for /tagall)\n');
+console.log('  ✅ /raid message structure delivers clean comment links with organic raider badges without tagging members\n');
 
 // ----------------------------------------------------
 // 5. Test: Member Tagging & Welcome Message Construction
@@ -352,18 +388,19 @@ assert(singleCommentRaid[0].includes('Target Comment'));
 assert(singleCommentRaid[0].includes('https://x.com/crypto_raider/status/18900000001001'));
 assert(singleCommentRaid[0].includes('@crypto_raider'));
 assert(singleCommentRaid[0].includes('Try contradicting or asking questions'));
-console.log('  ✅ Single comment raid: activated direct target raid with link and reply vibe (0 sub-replies)');
+assert(singleCommentRaid[0].includes('<b>(+64)</b> All raiders on this target'));
+console.log('  ✅ Single comment raid: activated direct target raid with link, vibe, and (+64) squad badge (0 sub-replies)');
 
 // Test 7B: Comment Raid with sub-replies (treated as main post raid)
 const commentWithSubReplies = formatRaidMessages({
   targetUrl: 'https://x.com/crypto_raider/status/18900000001001',
   sampleResult: {
     totalComments: 5,
-    samplePercentage: 40,
     selectedCount: 2,
+    totalRaiders: 64,
     selectedComments: [
-      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic' },
-      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing' }
+      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic', assignedRaiders: 35 },
+      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing', assignedRaiders: 29 }
     ]
   },
   targetAuthor: 'crypto_raider',
@@ -376,10 +413,14 @@ assert(commentWithSubReplies[0].includes('Target Post'));
 assert(commentWithSubReplies[0].includes('Target Reply Vibe'));
 assert(commentWithSubReplies[0].includes('Play devil\'s advocate'));
 assert(commentWithSubReplies[0].includes('Comments:</b> 5'));
-assert(commentWithSubReplies[0].includes('Target Comments to Raid'));
+assert(commentWithSubReplies[0].includes('Squad:</b> 64 Raiders Distributed'));
+assert(commentWithSubReplies[0].includes('Target Comments to Raid (with Reply Vibes & Squad Splits)'));
 assert(commentWithSubReplies[0].includes('@sub_user1'));
+assert(commentWithSubReplies[0].includes('(+35)'));
+assert(commentWithSubReplies[0].includes('@sub_user2'));
+assert(commentWithSubReplies[0].includes('(+29)'));
 assert(commentWithSubReplies[0].includes('Be sarcastic'));
-console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post and Comments stats cleanly\n');
+console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post, Comments stats, and squad badges cleanly\n');
 
 // ----------------------------------------------------
 // 8. Test: Admin-Only Mentions & Command Protection

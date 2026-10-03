@@ -76,12 +76,13 @@ async function safeReply(ctx, text, options = {}) {
 bot.command(['start', 'help'], requireGroupAdmin, async (ctx) => {
   const welcomeMessage = 
     `🤖 <b>X Raid Telegram Bot</b>\n\n` +
-    `This bot extracts comments from any X (Twitter) post or comment, selects the <b>10 comments with the highest engagement</b>, ` +
-    `and delivers direct links to the group with actionable reply vibes for raiders to execute.\n\n` +
+    `This bot extracts comments from any X (Twitter) post or comment, selects the <b>20 comments with the highest engagement</b>, ` +
+    `and splits the squad (default: <b>64 raiders</b>) organically across targets (+10, +6, +7...) so replies look natural and un-farmed.\n\n` +
     `🔒 <b>Security:</b> Only group administrators are permitted to tag or trigger this bot.\n\n` +
     `📌 <b>Admin Commands:</b>\n` +
-    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (targets top 10 highest engagement comments)\n` +
-    `• <code>/raid &lt;X_LINK&gt; [count]</code> — Raid with custom target count (e.g. <code>/raid &lt;url&gt; 5</code>)\n` +
+    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (targets top 20 comments split across 64 raiders)\n` +
+    `• <code>/raid &lt;X_LINK&gt; [count]</code> — Raid with custom comment count (e.g. <code>/raid &lt;url&gt; 15</code>)\n` +
+    `• <code>/raid &lt;X_LINK&gt; raiders: 80</code> — Raid with custom squad size\n` +
     `• <code>/raid &lt;X_LINK&gt; focus: your theme</code> — Raid with custom mission focus\n` +
     `• <code>/angles [custom focus]</code> — Preview lively suggested reply vibes\n` +
     `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
@@ -111,7 +112,8 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
     `📊 <b>Bot Status Report</b>\n\n` +
     `• <b>Uptime:</b> ${uptimeMinutes} minutes\n` +
     `• <b>X Data Source:</b> ${escapeHtml(modeStatus)}\n` +
-    `• <b>Target Selection:</b> Top ${config.TOP_COMMENTS_LIMIT} highest engagement comments\n` +
+    `• <b>Default Top Targets:</b> ${config.TOP_COMMENTS_LIMIT} comments\n` +
+    `• <b>Default Raid Squad:</b> ${config.TOTAL_RAIDERS} raiders\n` +
     `• <b>Auto-delete warnings:</b> ${config.DELETE_WARNING_AFTER_SECONDS}s\n` +
     `• <b>Group Pinning:</b> ${config.PIN_RAID_MESSAGE ? 'Enabled' : 'Disabled'}\n` +
     `• <b>Bot Permissions:</b> Admin in this chat ✅`;
@@ -373,21 +375,26 @@ bot.on('message:new_chat_members', async (ctx) => {
 /**
  * Core Handler for initiating a raid
  */
-async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = null) {
+async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus = null, customRaiders = null) {
   const parsed = parseTweetUrl(inputUrl);
   if (!parsed) {
     await safeReply(
       ctx,
       `⚠️ <b>Invalid Link</b>: Please provide a valid X (Twitter) post URL.\n\n` +
       `<b>Usage:</b>\n<code>/raid https://x.com/username/status/1234567890</code>\n` +
-      `<b>Optional custom percentage:</b>\n<code>/raid https://x.com/username/status/1234567890 50</code>`
+      `<b>Optional custom count:</b>\n<code>/raid https://x.com/username/status/1234567890 20</code>\n` +
+      `<b>Optional squad size:</b>\n<code>/raid https://x.com/username/status/1234567890 raiders: 64</code>`
     );
     return;
   }
 
-  const samplePercent = inputPercent 
-    ? parseInt(inputPercent, 10) 
-    : config.DEFAULT_SAMPLE_PERCENT;
+  const targetLimit = inputLimit 
+    ? parseInt(inputLimit, 10) 
+    : config.TOP_COMMENTS_LIMIT;
+
+  const squadSize = customRaiders 
+    ? parseInt(customRaiders, 10) 
+    : config.TOTAL_RAIDERS;
 
   // Send initial pending message
   const statusMsg = await safeReply(
@@ -478,9 +485,11 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
 
     let sampleResult;
     if (comments.length > 0) {
-      // 2. Select top 10 comments with highest engagement (or custom limit if specified)
-      const targetLimit = inputPercent ? parseInt(inputPercent, 10) : config.TOP_COMMENTS_LIMIT;
-      sampleResult = pickTopEngagementComments(comments, targetLimit, { excludeAuthor: postAuthor });
+      // 2. Select top comments with highest engagement (default: 20) and distribute squad (default: 64)
+      sampleResult = pickTopEngagementComments(comments, targetLimit, { 
+        excludeAuthor: postAuthor,
+        totalRaiders: squadSize
+      });
       // 3. Attach lively, thread-igniting reply vibes per comment
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
     } else {
@@ -503,8 +512,9 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
       // If target has 0 sub-replies or is a comment, treat target as direct raid mission!
       sampleResult = {
         totalComments: 0,
-        samplePercentage: samplePercent,
+        targetLimit,
         selectedCount: 0,
+        totalRaiders: squadSize,
         selectedComments: []
       };
     }
@@ -563,36 +573,51 @@ async function handleRaidExecution(ctx, inputUrl, inputPercent, customFocus = nu
 }
 
 /**
- * Command: /raid <URL> [PERCENTAGE] [focus: YOUR THEME]
+ * Command: /raid <URL> [COUNT] [raiders: NUMBER] [focus: YOUR THEME]
  * Protected by requireGroupAdmin middleware
  */
 bot.command('raid', requireGroupAdmin, async (ctx) => {
   const fullText = (ctx.message.text || '').trim();
   const rawArgs = fullText.split(/\s+/).slice(1);
   let inputUrl = null;
-  let inputPercent = null;
+  let inputLimit = null;
   let customFocus = null;
+  let customRaiders = null;
+
+  function parseRaidArgs(remaining) {
+    if (!remaining) return;
+    let rem = remaining.trim();
+
+    const focusMatch = rem.match(/(?:focus|theme):\s*(.*)$/i);
+    if (focusMatch) {
+      customFocus = focusMatch[1].trim();
+      rem = rem.replace(/(?:focus|theme):\s*(.*)$/i, '').trim();
+    }
+
+    const raidersMatch = rem.match(/(?:raiders|squad|members|participants):\s*(\d{1,4})/i);
+    if (raidersMatch) {
+      customRaiders = parseInt(raidersMatch[1], 10);
+      rem = rem.replace(/(?:raiders|squad|members|participants):\s*(\d{1,4})/i, '').trim();
+    }
+
+    const twoNumbersMatch = rem.match(/^(\d{1,3})\s+(\d{1,4})$/);
+    const oneNumberMatch = rem.match(/^(\d{1,3})$/);
+
+    if (twoNumbersMatch) {
+      inputLimit = parseInt(twoNumbersMatch[1], 10);
+      if (!customRaiders) customRaiders = parseInt(twoNumbersMatch[2], 10);
+    } else if (oneNumberMatch) {
+      inputLimit = parseInt(oneNumberMatch[1], 10);
+    } else if (rem && !customFocus) {
+      customFocus = rem;
+    }
+  }
 
   // 1. Check if first argument is a valid X URL
   if (rawArgs[0] && parseTweetUrl(rawArgs[0])) {
     inputUrl = rawArgs[0];
     const remaining = rawArgs.slice(1).join(' ').trim();
-    if (remaining) {
-      const percentMatch = remaining.match(/^(\d{1,3})(?:\s+focus:\s*|\s+theme:\s*|\s+)(.*)$/i);
-      const simplePercentMatch = remaining.match(/^(\d{1,3})$/);
-      const focusMatch = remaining.match(/(?:focus|theme):\s*(.*)$/i);
-
-      if (simplePercentMatch) {
-        inputPercent = parseInt(simplePercentMatch[1], 10);
-      } else if (percentMatch) {
-        inputPercent = parseInt(percentMatch[1], 10);
-        if (percentMatch[2]) customFocus = percentMatch[2].trim();
-      } else if (focusMatch) {
-        customFocus = focusMatch[1].trim();
-      } else {
-        customFocus = remaining;
-      }
-    }
+    parseRaidArgs(remaining);
   } else if (ctx.message?.reply_to_message?.text) {
     // 2. Reply to another message containing an X URL
     const replyText = ctx.message.reply_to_message.text;
@@ -600,22 +625,7 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
     if (match) {
       inputUrl = match[0];
       const remaining = rawArgs.join(' ').trim();
-      if (remaining) {
-        const simplePercentMatch = remaining.match(/^(\d{1,3})$/);
-        const percentWithFocusMatch = remaining.match(/^(\d{1,3})\s+(?:focus:\s*|theme:\s*|)(.*)$/i);
-        const focusMatch = remaining.match(/(?:focus|theme):\s*(.*)$/i);
-
-        if (simplePercentMatch) {
-          inputPercent = parseInt(simplePercentMatch[1], 10);
-        } else if (percentWithFocusMatch) {
-          inputPercent = parseInt(percentWithFocusMatch[1], 10);
-          if (percentWithFocusMatch[2]) customFocus = percentWithFocusMatch[2].trim();
-        } else if (focusMatch) {
-          customFocus = focusMatch[1].trim();
-        } else {
-          customFocus = remaining;
-        }
-      }
+      parseRaidArgs(remaining);
     }
   }
 
@@ -625,15 +635,16 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       `**Method 1:** Send with URL:\n` +
       `\`/raid https://x.com/username/status/1890000000000000000\`\n\n` +
       `**Method 2:** Reply to any message containing an X link with \`/raid\`!\n\n` +
-      `**Optional custom count:** \`/raid <url> 5\` (defaults to top 10 highest engagement)\n` +
+      `**Optional custom count:** \`/raid <url> 15\` (defaults to top 20 highest engagement)\n` +
+      `**Optional squad size:** \`/raid <url> raiders: 64\` (splits squad across comments)\n` +
       `**Optional custom focus:** \`/raid <url> focus: challenge them on gas fees\`\n` +
-      `**Combined:** \`/raid <url> 15 focus: ask when mainnet drops\``,
+      `**Combined:** \`/raid <url> 20 raiders: 64 focus: ask when mainnet drops\``,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  await handleRaidExecution(ctx, inputUrl, inputPercent, customFocus);
+  await handleRaidExecution(ctx, inputUrl, inputLimit, customFocus, customRaiders);
 });
 
 /**
