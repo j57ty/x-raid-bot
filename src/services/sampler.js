@@ -97,11 +97,11 @@ function distributeRaiders(totalRaiders = config.TOTAL_RAIDERS || 64, count = co
  * Also splits the participating raiders (default: 64) organically across the selected comments.
  * 
  * @param {Array<Object>} comments - Array of comment objects
- * @param {number} [limit=20] - Number of top comments to return (default: 20)
- * @param {Object} [options] - Optional configurations (e.g. excludeAuthor, totalRaiders)
- * @returns {Object} Result with totalComments, targetLimit, selectedCount, totalRaiders, and sorted selectedComments with assignedRaiders
+ * @param {number} [limit=25] - Number of top comments to return (default: 25)
+ * @param {Object} [options] - Optional configurations (e.g. excludeAuthor)
+ * @returns {Object} Result with totalComments, targetLimit, selectedCount, and sorted selectedComments
  */
-function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 20, options = {}) {
+function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 25, options = {}) {
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
     return {
       totalComments: 0,
@@ -127,7 +127,7 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
     };
   }
 
-  const targetLimit = Math.max(1, parseInt(limit, 10) || 20);
+  const targetLimit = Math.max(1, parseInt(limit, 10) || 25);
 
   // Sort descending by highest engagement score
   // Tie-breaker 1: likes, Tie-breaker 2: views
@@ -153,8 +153,8 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
  * Backward-compatibility alias: calls pickTopEngagementComments.
  * If a custom limit is provided, uses it.
  */
-function pickCommentsSample(comments, countOrPercent = 20, options = {}) {
-  const limit = typeof countOrPercent === 'number' && countOrPercent > 0 ? countOrPercent : (config.TOP_COMMENTS_LIMIT || 20);
+function pickCommentsSample(comments, countOrPercent = 25, options = {}) {
+  const limit = typeof countOrPercent === 'number' && countOrPercent > 0 ? countOrPercent : (config.TOP_COMMENTS_LIMIT || 25);
   return pickTopEngagementComments(comments, limit, options);
 }
 

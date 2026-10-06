@@ -649,9 +649,9 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       `**Method 1:** Send with URL:\n` +
       `\`/raid https://x.com/username/status/1890000000000000000\`\n\n` +
       `**Method 2:** Reply to any message containing an X link with \`/raid\`!\n\n` +
-      `**Optional custom count:** \`/raid <url> 10\` (defaults to top 20 highest engagement)\n` +
+      `**Optional custom count:** \`/raid <url> 15\` (defaults to top 25 highest engagement)\n` +
       `**Optional custom focus:** \`/raid <url> focus: challenge them on gas fees\`\n` +
-      `**Combined:** \`/raid <url> 10 focus: ask when mainnet drops\``,
+      `**Combined:** \`/raid <url> 25 focus: ask when mainnet drops\``,
       { parse_mode: 'Markdown' }
     );
     return;

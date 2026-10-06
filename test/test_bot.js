@@ -54,9 +54,9 @@ console.log('  ✅ Non-X URLs correctly rejected\n');
 // ----------------------------------------------------
 // 2. Test: Top Engagement Comments Selection & Organic Raider Distribution
 // ----------------------------------------------------
-console.log('Test 2: pickTopEngagementComments & distributeRaiders (20 Comments Default, 64 Raiders Split)');
+console.log('Test 2: pickTopEngagementComments & distributeRaiders (25 Comments Default)');
 
-// Case A: Default selection returns 20 comments when pool has >= 20 comments
+// Case A: Default selection returns 25 comments when pool has >= 25 comments
 const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
   id: `tweet_${i}`,
   author: `user_${i}`,
@@ -70,15 +70,15 @@ const allTractionMock = Array.from({ length: 100 }, (_, i) => ({
 
 const sampleDefault = pickTopEngagementComments(allTractionMock);
 assert.strictEqual(sampleDefault.totalComments, 100);
-assert.strictEqual(sampleDefault.selectedCount, 20, 'Default selection limit should be 20');
-assert.strictEqual(sampleDefault.selectedComments.length, 20);
+assert.strictEqual(sampleDefault.selectedCount, 25, 'Default selection limit should be 25');
+assert.strictEqual(sampleDefault.selectedComments.length, 25);
 // Verify sorted descending
 assert.strictEqual(sampleDefault.selectedComments[0].id, 'tweet_99');
-assert.strictEqual(sampleDefault.selectedComments[19].id, 'tweet_80');
+assert.strictEqual(sampleDefault.selectedComments[24].id, 'tweet_75');
 for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
   assert(sampleDefault.selectedComments[i].engagement >= sampleDefault.selectedComments[i + 1].engagement);
 }
-console.log(`  ✅ Default 20 comments selected in descending engagement order`);
+console.log(`  ✅ Default 25 comments selected in descending engagement order`);
 
 // Case B: Explicit limit (e.g. 10)
 const sample10 = pickTopEngagementComments(allTractionMock, 10);

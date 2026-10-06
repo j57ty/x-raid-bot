@@ -18,7 +18,7 @@ module.exports = {
   TWITTERAPI_IO_KEY: process.env.TWITTERAPI_IO_KEY || 'new1_bed66c7f5fd840ca8e72230f54751e86',
 
   // Bot Settings
-  TOP_COMMENTS_LIMIT: parseInt(process.env.TOP_COMMENTS_LIMIT || '20', 10), // Default: 20 comments with highest engagement
+  TOP_COMMENTS_LIMIT: parseInt(process.env.TOP_COMMENTS_LIMIT || '25', 10), // Default: 25 comments with highest engagement
   TOTAL_RAIDERS: parseInt(process.env.TOTAL_RAIDERS || '64', 10), // Default squad: 64 raiders participating in raid
   DEFAULT_SAMPLE_PERCENT: parseInt(process.env.DEFAULT_SAMPLE_PERCENT || '40', 10),
   MAX_LINKS_PER_MESSAGE: parseInt(process.env.MAX_LINKS_PER_MESSAGE || '15', 10),
