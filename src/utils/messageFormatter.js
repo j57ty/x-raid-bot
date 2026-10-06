@@ -94,7 +94,7 @@ function formatRaidMessages({
         msg += `💬 <b>Target Reply Vibe:</b> <i>${escapeHtml(targetVibe)}</i>\n`;
       }
       msg += `📊 <b>Comments:</b> ${totalComments} | <b>Top Targets:</b> ${selectedCount}\n\n`;
-      msg += `👇 <b>Target Comments to Raid (with Reply Vibes):</b>\n\n`;
+      msg += `👇 <b>Target Comments to Raid (with Reply Vibes & Target Replies):</b>\n\n`;
     } else {
       // Continuation header for multi-part messages
       msg += `⚔️ <b>RAID TARGETS (Part ${batchNumber}/${totalBatches})</b>\n\n`;
@@ -105,8 +105,9 @@ function formatRaidMessages({
       const username = comment.author ? comment.author.replace(/^@/, '') : 'user';
       const displayName = comment.authorName || comment.author || 'User';
       const commentUrl = comment.url || `https://x.com/${username}/status/${comment.id}`;
+      const raiderBadge = comment.assignedRaiders ? ` <b>(+${comment.assignedRaiders})</b>` : '';
 
-      msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})\n`;
+      msg += `${globalNum}. <b>${escapeHtml(displayName)}</b> (@${escapeHtml(username)})${raiderBadge}\n`;
       msg += `   <code>${escapeHtml(commentUrl)}</code>\n`;
 
       if (comment.replyVibe) {
@@ -122,7 +123,7 @@ function formatRaidMessages({
     });
 
     if (index === totalBatches - 1) {
-      msg += `🔥 <b>Instructions:</b> Click each comment link above, like, and drop your reply matching the vibe!`;
+      msg += `🔥 <b>Instructions:</b> Aim for the target number of replies beside each comment (+18, +7, etc.) and drop replies matching the vibe!`;
     }
 
     messages.push(msg.trim());

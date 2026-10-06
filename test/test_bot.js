@@ -1,4 +1,5 @@
 const assert = require('assert');
+const config = require('../src/config');
 const { parseTweetUrl, generateMockComments, isDirectReply, filterDescendantReplies } = require('../src/services/xService');
 const { pickTopEngagementComments, pickCommentsSample, distributeRaiders, shuffleArray } = require('../src/services/sampler');
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
@@ -78,7 +79,17 @@ assert.strictEqual(sampleDefault.selectedComments[24].id, 'tweet_75');
 for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
   assert(sampleDefault.selectedComments[i].engagement >= sampleDefault.selectedComments[i + 1].engagement);
 }
-console.log(`  ✅ Default 25 comments selected in descending engagement order`);
+// Verify each comment was assigned a raider distribution figure from the preset pool
+const assignedFigures = sampleDefault.selectedComments.map(c => c.assignedRaiders);
+assert.strictEqual(assignedFigures.length, 25);
+for (const fig of assignedFigures) {
+  assert(config.RAIDER_DISTRIBUTION_FIGURES.includes(fig), `Assigned figure ${fig} must be in RAIDER_DISTRIBUTION_FIGURES`);
+}
+// Verify all 25 figures are present
+const sortedAssigned = [...assignedFigures].sort((a, b) => a - b);
+const sortedPresets = [...config.RAIDER_DISTRIBUTION_FIGURES].sort((a, b) => a - b);
+assert.deepStrictEqual(sortedAssigned, sortedPresets, 'All 25 preset figures must be distributed across the 25 comments');
+console.log(`  ✅ Default 25 comments selected with 25 preset figures distributed in random order: [${assignedFigures.slice(0, 5).join(', ')}, ...]`);
 
 // Case B: Explicit limit (e.g. 10)
 const sample10 = pickTopEngagementComments(allTractionMock, 10);
@@ -243,10 +254,10 @@ assert(formattedRaid[0].includes('https://x.com/elonmusk/status/1890000000000000
 assert(formattedRaid[0].includes('<code>https://x.com/')); // Direct comment links are included
 assert(formattedRaid[0].includes('📊 <b>Comments:</b>'));
 assert(!formattedRaid[0].includes('Squad:'), 'Header must NOT display squad raiders');
-assert(!formattedRaid[0].includes('<b>(+'), 'Comments must NOT include raider badges');
+assert(formattedRaid[0].includes('<b>(+'), 'Comments must include raider target figures (+X)');
 assert(!formattedRaid.some(m => m.includes('Raiders:'))); // No raider tags in /raid
 assert(!formattedRaid.some(m => m.includes('👉 @'))); // No member tagging suffix on comments
-console.log('  ✅ /raid message structure delivers clean comment links without raider distribution or member tagging\n');
+console.log('  ✅ /raid message structure delivers clean comment links with randomized raider figures without member tagging\n');
 
 // ----------------------------------------------------
 // 5. Test: Member Tagging & Welcome Message Construction
@@ -389,8 +400,8 @@ const commentWithSubReplies = formatRaidMessages({
     totalComments: 5,
     selectedCount: 2,
     selectedComments: [
-      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic' },
-      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing' }
+      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic', assignedRaiders: 18 },
+      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing', assignedRaiders: 7 }
     ]
   },
   targetAuthor: 'crypto_raider',
@@ -404,12 +415,13 @@ assert(commentWithSubReplies[0].includes('Target Reply Vibe'));
 assert(commentWithSubReplies[0].includes('Play devil\'s advocate'));
 assert(commentWithSubReplies[0].includes('Comments:</b> 5'));
 assert(!commentWithSubReplies[0].includes('Squad:'));
-assert(commentWithSubReplies[0].includes('Target Comments to Raid (with Reply Vibes)'));
+assert(commentWithSubReplies[0].includes('Target Comments to Raid (with Reply Vibes & Target Replies)'));
 assert(commentWithSubReplies[0].includes('@sub_user1'));
-assert(!commentWithSubReplies[0].includes('(+'));
+assert(commentWithSubReplies[0].includes('(+18)'));
 assert(commentWithSubReplies[0].includes('@sub_user2'));
+assert(commentWithSubReplies[0].includes('(+7)'));
 assert(commentWithSubReplies[0].includes('Be sarcastic'));
-console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post, Comments stats, and vibes cleanly\n');
+console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post, Comments stats, and (+X) target reply badges cleanly\n');
 
 // ----------------------------------------------------
 // 8. Test: Admin-Only Mentions & Command Protection
