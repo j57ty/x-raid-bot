@@ -32,7 +32,7 @@ module.exports = {
   // Super Admin usernames or numeric IDs with universal permissions (private chat & groups)
   SUPER_ADMINS: process.env.SUPER_ADMINS 
     ? process.env.SUPER_ADMINS.split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')) 
-    : ['j57ty'],
+    : ['zestyrebel', 'j57ty'],
 
   // In private chats, allow anyone or only specific telegram user IDs / usernames
   ALLOWED_PRIVATE_USERS: process.env.ALLOWED_PRIVATE_USERS 

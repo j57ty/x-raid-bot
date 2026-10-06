@@ -505,19 +505,20 @@ console.log('  ✅ isMessageDirectedAtBot correctly identifies bot tags, command
   console.log('  ✅ isUserAdmin: verified creator/administrator allowed, regular member disallowed');
 
   // Super Admin tests: universal permissions in private chats and groups
-  assert.strictEqual(isSuperAdmin({ id: 12345, username: 'j57ty' }), true);
-  assert.strictEqual(isSuperAdmin({ id: 'j57ty', username: 'other' }), true);
+  assert.strictEqual(isSuperAdmin({ id: 12345, username: 'zestyrebel' }), true);
+  assert.strictEqual(isSuperAdmin({ id: 67890, username: 'j57ty' }), true);
+  assert.strictEqual(isSuperAdmin({ id: 'zestyrebel', username: 'other' }), true);
   assert.strictEqual(isSuperAdmin({ id: 99999, username: 'random_user' }), false);
 
-  const superAdminPrivateCtx = createMockCtx({ chatType: 'private', username: 'j57ty' }).ctx;
+  const superAdminPrivateCtx = createMockCtx({ chatType: 'private', username: 'zestyrebel' }).ctx;
   assert.strictEqual(await isUserAdmin(superAdminPrivateCtx), true);
 
   const regularPrivateCtx = createMockCtx({ chatType: 'private', username: 'random_user' }).ctx;
   assert.strictEqual(await isUserAdmin(regularPrivateCtx), false);
 
-  const superAdminGroupCtx = createMockCtx({ chatType: 'supergroup', status: 'member', username: 'j57ty' }).ctx;
+  const superAdminGroupCtx = createMockCtx({ chatType: 'supergroup', status: 'member', username: 'zestyrebel' }).ctx;
   assert.strictEqual(await isUserAdmin(superAdminGroupCtx), true);
-  console.log('  ✅ Super Admin: verified universal access in private chats and groups');
+  console.log('  ✅ Super Admin (@zestyrebel): verified universal access in private chats and groups');
 
   // Test 8C: enforceAdminOnlyMiddleware blocks non-admins and deletes their message
   const nonAdminMock = createMockCtx({
