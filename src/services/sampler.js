@@ -102,16 +102,11 @@ function distributeRaiders(totalRaiders = config.TOTAL_RAIDERS || 64, count = co
  * @returns {Object} Result with totalComments, targetLimit, selectedCount, totalRaiders, and sorted selectedComments with assignedRaiders
  */
 function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT || 20, options = {}) {
-  const totalRaiders = typeof options.totalRaiders === 'number' && options.totalRaiders > 0
-    ? options.totalRaiders
-    : (config.TOTAL_RAIDERS || 64);
-
   if (!comments || !Array.isArray(comments) || comments.length === 0) {
     return {
       totalComments: 0,
       targetLimit: limit,
       selectedCount: 0,
-      totalRaiders,
       selectedComments: []
     };
   }
@@ -128,7 +123,6 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
       totalComments: 0,
       targetLimit: limit,
       selectedCount: 0,
-      totalRaiders,
       selectedComments: []
     };
   }
@@ -147,17 +141,10 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
 
   const selected = sorted.slice(0, targetLimit);
 
-  // Organically split participating raiders across selected comments
-  const allocations = distributeRaiders(totalRaiders, selected.length);
-  for (let i = 0; i < selected.length; i++) {
-    selected[i].assignedRaiders = allocations[i];
-  }
-
   return {
     totalComments: poolComments.length,
     targetLimit,
     selectedCount: selected.length,
-    totalRaiders,
     selectedComments: selected
   };
 }

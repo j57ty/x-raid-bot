@@ -4,7 +4,7 @@ const { pickTopEngagementComments, pickCommentsSample, distributeRaiders, shuffl
 const { formatRaidMessages, chunkArray, escapeHtml } = require('../src/utils/messageFormatter');
 const { generateReplyAngles, attachVibesToComments } = require('../src/services/anglesGenerator');
 const memberStore = require('../src/services/memberStore');
-const { isUserAdmin, isMessageDirectedAtBot, enforceAdminOnlyMiddleware, requireGroupAdmin } = require('../src/middleware/adminCheck');
+const { isUserAdmin, isSuperAdmin, isMessageDirectedAtBot, enforceAdminOnlyMiddleware, requireGroupAdmin } = require('../src/middleware/adminCheck');
 
 const { execSync } = require('child_process');
 
@@ -72,28 +72,19 @@ const sampleDefault = pickTopEngagementComments(allTractionMock);
 assert.strictEqual(sampleDefault.totalComments, 100);
 assert.strictEqual(sampleDefault.selectedCount, 20, 'Default selection limit should be 20');
 assert.strictEqual(sampleDefault.selectedComments.length, 20);
-assert.strictEqual(sampleDefault.totalRaiders, 64, 'Default total raiders should be 64');
 // Verify sorted descending
 assert.strictEqual(sampleDefault.selectedComments[0].id, 'tweet_99');
 assert.strictEqual(sampleDefault.selectedComments[19].id, 'tweet_80');
 for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
   assert(sampleDefault.selectedComments[i].engagement >= sampleDefault.selectedComments[i + 1].engagement);
 }
-// Verify raiders were assigned to each comment and sum equals 64
-let totalAssigned = 0;
-for (const c of sampleDefault.selectedComments) {
-  assert(typeof c.assignedRaiders === 'number' && c.assignedRaiders >= 1, 'Each comment must have at least 1 raider assigned');
-  totalAssigned += c.assignedRaiders;
-}
-assert.strictEqual(totalAssigned, 64, 'Total assigned raiders must equal 64');
-console.log(`  ✅ Default 20 comments selected and 64 raiders distributed organically (sum = ${totalAssigned})`);
+console.log(`  ✅ Default 20 comments selected in descending engagement order`);
 
 // Case B: Explicit limit (e.g. 10)
 const sample10 = pickTopEngagementComments(allTractionMock, 10);
 assert.strictEqual(sample10.selectedCount, 10);
 assert.strictEqual(sample10.selectedComments.length, 10);
-assert.strictEqual(sample10.selectedComments.reduce((acc, c) => acc + c.assignedRaiders, 0), 64);
-console.log(`  ✅ Explicit limit 10: selected top 10 with 64 raiders distributed`);
+console.log(`  ✅ Explicit limit 10: selected top 10 comments`);
 
 // Case C: distributeRaiders unit tests
 const dist20 = distributeRaiders(64, 20);
@@ -142,15 +133,13 @@ assert.strictEqual(sampleSmall.selectedComments[1].id, '2'); // (60)
 assert.strictEqual(sampleSmall.selectedComments[2].id, '4'); // (30)
 assert.strictEqual(sampleSmall.selectedComments[3].id, '1'); // (12)
 assert.strictEqual(sampleSmall.selectedComments[4].id, '3'); // (2)
-assert.strictEqual(sampleSmall.selectedComments.reduce((acc, c) => acc + c.assignedRaiders, 0), 64);
-console.log(`  ✅ Small pool (5 comments): returns all 5 sorted with 64 raiders distributed`);
+console.log(`  ✅ Small pool (5 comments): returns all 5 sorted comments`);
 
 // Case F: 1 comment -> 1 selected
 const singleMock = [{ id: '1', author: 'solo', url: 'https://x.com/solo/status/1', likes: 5, retweets: 1 }];
 const sample1 = pickTopEngagementComments(singleMock, 20);
 assert.strictEqual(sample1.selectedCount, 1);
-assert.strictEqual(sample1.selectedComments[0].assignedRaiders, 64);
-console.log(`  ✅ 1 comment: selected 1 with 64 raiders assigned`);
+console.log(`  ✅ 1 comment: selected 1`);
 
 // Case G: 0 comments -> 0 selected
 const sample0 = pickTopEngagementComments([], 20);
@@ -252,11 +241,12 @@ console.log(`  ✅ Formatted into ${formattedRaid.length} chunked messages (resp
 assert(formattedRaid[0].includes('⚔️ <b>X RAID MISSION ACTIVATED</b> ⚔️'));
 assert(formattedRaid[0].includes('https://x.com/elonmusk/status/1890000000000000000')); // Target post link is kept
 assert(formattedRaid[0].includes('<code>https://x.com/')); // Direct comment links are included
-assert(formattedRaid[0].includes('Squad:</b> 64 Raiders Distributed'), 'Header must display squad raiders distributed');
-assert(formattedRaid[0].includes('<b>(+'), 'Comments must include organic raider badge (+X)');
+assert(formattedRaid[0].includes('📊 <b>Comments:</b>'));
+assert(!formattedRaid[0].includes('Squad:'), 'Header must NOT display squad raiders');
+assert(!formattedRaid[0].includes('<b>(+'), 'Comments must NOT include raider badges');
 assert(!formattedRaid.some(m => m.includes('Raiders:'))); // No raider tags in /raid
 assert(!formattedRaid.some(m => m.includes('👉 @'))); // No member tagging suffix on comments
-console.log('  ✅ /raid message structure delivers clean comment links with organic raider badges without tagging members\n');
+console.log('  ✅ /raid message structure delivers clean comment links without raider distribution or member tagging\n');
 
 // ----------------------------------------------------
 // 5. Test: Member Tagging & Welcome Message Construction
@@ -388,8 +378,9 @@ assert(singleCommentRaid[0].includes('Target Comment'));
 assert(singleCommentRaid[0].includes('https://x.com/crypto_raider/status/18900000001001'));
 assert(singleCommentRaid[0].includes('@crypto_raider'));
 assert(singleCommentRaid[0].includes('Try contradicting or asking questions'));
-assert(singleCommentRaid[0].includes('<b>(+64)</b> All raiders on this target'));
-console.log('  ✅ Single comment raid: activated direct target raid with link, vibe, and (+64) squad badge (0 sub-replies)');
+assert(!singleCommentRaid[0].includes('Squad Target'));
+assert(!singleCommentRaid[0].includes('(+'));
+console.log('  ✅ Single comment raid: activated direct target raid with link and vibe (0 sub-replies)');
 
 // Test 7B: Comment Raid with sub-replies (treated as main post raid)
 const commentWithSubReplies = formatRaidMessages({
@@ -397,10 +388,9 @@ const commentWithSubReplies = formatRaidMessages({
   sampleResult: {
     totalComments: 5,
     selectedCount: 2,
-    totalRaiders: 64,
     selectedComments: [
-      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic', assignedRaiders: 35 },
-      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing', assignedRaiders: 29 }
+      { id: 'sub_1', author: 'sub_user1', authorName: 'Sub User 1', url: 'https://x.com/sub_user1/status/sub_1', replyVibe: 'Be sarcastic' },
+      { id: 'sub_2', author: 'sub_user2', authorName: 'Sub User 2', url: 'https://x.com/sub_user2/status/sub_2', replyVibe: 'Support without repeating the same thing' }
     ]
   },
   targetAuthor: 'crypto_raider',
@@ -413,14 +403,13 @@ assert(commentWithSubReplies[0].includes('Target Post'));
 assert(commentWithSubReplies[0].includes('Target Reply Vibe'));
 assert(commentWithSubReplies[0].includes('Play devil\'s advocate'));
 assert(commentWithSubReplies[0].includes('Comments:</b> 5'));
-assert(commentWithSubReplies[0].includes('Squad:</b> 64 Raiders Distributed'));
-assert(commentWithSubReplies[0].includes('Target Comments to Raid (with Reply Vibes & Squad Splits)'));
+assert(!commentWithSubReplies[0].includes('Squad:'));
+assert(commentWithSubReplies[0].includes('Target Comments to Raid (with Reply Vibes)'));
 assert(commentWithSubReplies[0].includes('@sub_user1'));
-assert(commentWithSubReplies[0].includes('(+35)'));
+assert(!commentWithSubReplies[0].includes('(+'));
 assert(commentWithSubReplies[0].includes('@sub_user2'));
-assert(commentWithSubReplies[0].includes('(+29)'));
 assert(commentWithSubReplies[0].includes('Be sarcastic'));
-console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post, Comments stats, and squad badges cleanly\n');
+console.log('  ✅ Comment raid with sub-replies: treats comment as main post with Target Post, Comments stats, and vibes cleanly\n');
 
 // ----------------------------------------------------
 // 8. Test: Admin-Only Mentions & Command Protection
@@ -514,6 +503,21 @@ console.log('  ✅ isMessageDirectedAtBot correctly identifies bot tags, command
   assert.strictEqual(await isUserAdmin(creatorCtx), true);
   assert.strictEqual(await isUserAdmin(memberCtx), false);
   console.log('  ✅ isUserAdmin: verified creator/administrator allowed, regular member disallowed');
+
+  // Super Admin tests: universal permissions in private chats and groups
+  assert.strictEqual(isSuperAdmin({ id: 12345, username: 'j57ty' }), true);
+  assert.strictEqual(isSuperAdmin({ id: 'j57ty', username: 'other' }), true);
+  assert.strictEqual(isSuperAdmin({ id: 99999, username: 'random_user' }), false);
+
+  const superAdminPrivateCtx = createMockCtx({ chatType: 'private', username: 'j57ty' }).ctx;
+  assert.strictEqual(await isUserAdmin(superAdminPrivateCtx), true);
+
+  const regularPrivateCtx = createMockCtx({ chatType: 'private', username: 'random_user' }).ctx;
+  assert.strictEqual(await isUserAdmin(regularPrivateCtx), false);
+
+  const superAdminGroupCtx = createMockCtx({ chatType: 'supergroup', status: 'member', username: 'j57ty' }).ctx;
+  assert.strictEqual(await isUserAdmin(superAdminGroupCtx), true);
+  console.log('  ✅ Super Admin: verified universal access in private chats and groups');
 
   // Test 8C: enforceAdminOnlyMiddleware blocks non-admins and deletes their message
   const nonAdminMock = createMockCtx({

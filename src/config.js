@@ -29,9 +29,14 @@ module.exports = {
   GROUP_MEMBERS: process.env.GROUP_MEMBERS || '', // Optional: Permanent roster of handles e.g. @user1, @user2
   
   // Admin & Permission Settings
-  // In private chats, allow anyone or only specific telegram user IDs
+  // Super Admin usernames or numeric IDs with universal permissions (private chat & groups)
+  SUPER_ADMINS: process.env.SUPER_ADMINS 
+    ? process.env.SUPER_ADMINS.split(',').map(s => s.trim().toLowerCase().replace(/^@/, '')) 
+    : ['j57ty'],
+
+  // In private chats, allow anyone or only specific telegram user IDs / usernames
   ALLOWED_PRIVATE_USERS: process.env.ALLOWED_PRIVATE_USERS 
-    ? process.env.ALLOWED_PRIVATE_USERS.split(',').map(id => id.trim()) 
+    ? process.env.ALLOWED_PRIVATE_USERS.split(',').map(id => id.trim().toLowerCase().replace(/^@/, '')) 
     : [],
   
   // Telegram Bot Username (optional fallback, auto-detected from botInfo)

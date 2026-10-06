@@ -1,6 +1,6 @@
 const { Bot } = require('grammy');
 const config = require('./config');
-const { requireGroupAdmin, enforceAdminOnlyMiddleware } = require('./middleware/adminCheck');
+const { requireGroupAdmin, enforceAdminOnlyMiddleware, isSuperAdmin, isUserAdmin } = require('./middleware/adminCheck');
 const { parseTweetUrl, getTweetComments, getTweetInfo } = require('./services/xService');
 const { pickTopEngagementComments, pickCommentsSample } = require('./services/sampler');
 const { formatRaidMessages, escapeHtml } = require('./utils/messageFormatter');
@@ -74,26 +74,50 @@ async function safeReply(ctx, text, options = {}) {
  * Command: /start or /help
  */
 bot.command(['start', 'help'], requireGroupAdmin, async (ctx) => {
+  const isPrivate = ctx.chat?.type === 'private';
   const welcomeMessage = 
     `🤖 <b>X Raid Telegram Bot</b>\n\n` +
-    `This bot extracts comments from any X (Twitter) post or comment, selects the <b>20 comments with the highest engagement</b>, ` +
-    `and splits the squad (default: <b>64 raiders</b>) organically across targets (+10, +6, +7...) so replies look natural and un-farmed.\n\n` +
-    `🔒 <b>Security:</b> Only group administrators are permitted to tag or trigger this bot.\n\n` +
-    `📌 <b>Admin Commands:</b>\n` +
-    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (targets top 20 comments split across 64 raiders)\n` +
-    `• <code>/raid &lt;X_LINK&gt; [count]</code> — Raid with custom comment count (e.g. <code>/raid &lt;url&gt; 15</code>)\n` +
-    `• <code>/raid &lt;X_LINK&gt; raiders: 80</code> — Raid with custom squad size\n` +
+    `This bot extracts comments from any X (Twitter) post or comment, selects the <b>comments with the highest engagement</b>, ` +
+    `and provides direct links with thread-igniting reply vibes to coordinate raids organically.\n\n` +
+    `🔒 <b>Security:</b> Group administrators and Super Admins have full access.\n\n` +
+    `📌 <b>Available Commands:</b>\n` +
+    `• <code>/raid &lt;X_LINK&gt;</code> — Start a raid (targets top comments with highest engagement)\n` +
+    `• <code>/raid &lt;X_LINK&gt; [count]</code> — Raid with custom comment count (e.g. <code>/raid &lt;url&gt; 10</code>)\n` +
     `• <code>/raid &lt;X_LINK&gt; focus: your theme</code> — Raid with custom mission focus\n` +
     `• <code>/angles [custom focus]</code> — Preview lively suggested reply vibes\n` +
-    `• <code>/tagall [message]</code> — Tag and notify all group members (Admin only)\n` +
-    `• <code>/addmembers @user1 @user2</code> — Bulk add members to raid roster (Admin only)\n` +
-    `• <code>/raiders</code> — View current active raiders roster (Admin only)\n` +
+    (!isPrivate ? `• <code>/tagall [message]</code> — Tag and notify all group members\n` : '') +
+    (!isPrivate ? `• <code>/addmembers @user1 @user2</code> — Bulk add members to roster\n` : '') +
+    (!isPrivate ? `• <code>/raiders</code> — View current active raiders roster\n` : '') +
+    `• <code>/id</code> — Check your Telegram User ID & Super Admin status\n` +
     `• <code>/status</code> — View bot operational metrics & settings\n` +
     `• <code>/help</code> — Display this instructions menu\n\n` +
     `💡 <b>Example:</b>\n` +
     `<code>/raid https://x.com/elonmusk/status/1890000000000000000</code>`;
 
   await safeReply(ctx, welcomeMessage);
+});
+
+/**
+ * Command: /id or /whoami
+ * Displays user identity and Super Admin status (accessible by anyone)
+ */
+bot.command(['id', 'whoami', 'myid'], async (ctx) => {
+  const user = ctx.from;
+  const isSuper = isSuperAdmin(user);
+  const isAdmin = await isUserAdmin(ctx);
+  const username = user?.username ? `@${user.username}` : 'None';
+  const roleBadge = isSuper ? '🌟 Super Admin' : (isAdmin ? '🛡️ Admin' : '👤 Member');
+
+  const reply = 
+    `🆔 <b>User Information</b>\n\n` +
+    `• <b>Name:</b> ${escapeHtml(user?.first_name || '')} ${escapeHtml(user?.last_name || '')}\n` +
+    `• <b>Username:</b> ${username}\n` +
+    `• <b>Telegram ID:</b> <code>${user?.id}</code>\n` +
+    `• <b>Status:</b> ${roleBadge}\n` +
+    `• <b>Chat Type:</b> ${ctx.chat?.type}\n` +
+    (isSuper ? `\n✅ You have full Super Admin access in private chat and groups!` : '');
+
+  await safeReply(ctx, reply);
 });
 
 /**
@@ -108,15 +132,19 @@ bot.command('status', requireGroupAdmin, async (ctx) => {
     ? '🧪 Test/Simulation Mode' 
     : (hasThirdParty ? '✅ Live TwitterAPI.io' : (hasXCookies ? '✅ Live X Cookies' : '⚠️ Test/Simulation (No X credentials)'));
 
+  const superAdminsList = config.SUPER_ADMINS && config.SUPER_ADMINS.length > 0
+    ? config.SUPER_ADMINS.map(a => `@${a}`).join(', ')
+    : 'None configured';
+
   const statusMsg = 
     `📊 <b>Bot Status Report</b>\n\n` +
     `• <b>Uptime:</b> ${uptimeMinutes} minutes\n` +
     `• <b>X Data Source:</b> ${escapeHtml(modeStatus)}\n` +
     `• <b>Default Top Targets:</b> ${config.TOP_COMMENTS_LIMIT} comments\n` +
-    `• <b>Default Raid Squad:</b> ${config.TOTAL_RAIDERS} raiders\n` +
+    `• <b>Super Admins:</b> ${escapeHtml(superAdminsList)}\n` +
     `• <b>Auto-delete warnings:</b> ${config.DELETE_WARNING_AFTER_SECONDS}s\n` +
     `• <b>Group Pinning:</b> ${config.PIN_RAID_MESSAGE ? 'Enabled' : 'Disabled'}\n` +
-    `• <b>Bot Permissions:</b> Admin in this chat ✅`;
+    `• <b>Chat Access:</b> Authorized ✅`;
 
   await safeReply(ctx, statusMsg);
 });
@@ -375,15 +403,15 @@ bot.on('message:new_chat_members', async (ctx) => {
 /**
  * Core Handler for initiating a raid
  */
-async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus = null, customRaiders = null) {
+async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus = null) {
   const parsed = parseTweetUrl(inputUrl);
   if (!parsed) {
     await safeReply(
       ctx,
       `⚠️ <b>Invalid Link</b>: Please provide a valid X (Twitter) post URL.\n\n` +
       `<b>Usage:</b>\n<code>/raid https://x.com/username/status/1234567890</code>\n` +
-      `<b>Optional custom count:</b>\n<code>/raid https://x.com/username/status/1234567890 20</code>\n` +
-      `<b>Optional squad size:</b>\n<code>/raid https://x.com/username/status/1234567890 raiders: 64</code>`
+      `<b>Optional custom count:</b>\n<code>/raid https://x.com/username/status/1234567890 10</code>\n` +
+      `<b>Optional custom focus:</b>\n<code>/raid https://x.com/username/status/1234567890 focus: your theme</code>`
     );
     return;
   }
@@ -391,10 +419,6 @@ async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus
   const targetLimit = inputLimit 
     ? parseInt(inputLimit, 10) 
     : config.TOP_COMMENTS_LIMIT;
-
-  const squadSize = customRaiders 
-    ? parseInt(customRaiders, 10) 
-    : config.TOTAL_RAIDERS;
 
   // Send initial pending message
   const statusMsg = await safeReply(
@@ -485,10 +509,9 @@ async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus
 
     let sampleResult;
     if (comments.length > 0) {
-      // 2. Select top comments with highest engagement (default: 20) and distribute squad (default: 64)
+      // 2. Select top comments with highest engagement (default: 20)
       sampleResult = pickTopEngagementComments(comments, targetLimit, { 
-        excludeAuthor: postAuthor,
-        totalRaiders: squadSize
+        excludeAuthor: postAuthor
       });
       // 3. Attach lively, thread-igniting reply vibes per comment
       sampleResult.selectedComments = attachVibesToComments(sampleResult.selectedComments, customFocus);
@@ -514,7 +537,6 @@ async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus
         totalComments: 0,
         targetLimit,
         selectedCount: 0,
-        totalRaiders: squadSize,
         selectedComments: []
       };
     }
@@ -573,7 +595,7 @@ async function handleRaidExecution(ctx, inputUrl, inputLimit = null, customFocus
 }
 
 /**
- * Command: /raid <URL> [COUNT] [raiders: NUMBER] [focus: YOUR THEME]
+ * Command: /raid <URL> [COUNT] [focus: YOUR THEME]
  * Protected by requireGroupAdmin middleware
  */
 bot.command('raid', requireGroupAdmin, async (ctx) => {
@@ -582,7 +604,6 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
   let inputUrl = null;
   let inputLimit = null;
   let customFocus = null;
-  let customRaiders = null;
 
   function parseRaidArgs(remaining) {
     if (!remaining) return;
@@ -594,20 +615,13 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       rem = rem.replace(/(?:focus|theme):\s*(.*)$/i, '').trim();
     }
 
-    const raidersMatch = rem.match(/(?:raiders|squad|members|participants):\s*(\d{1,4})/i);
-    if (raidersMatch) {
-      customRaiders = parseInt(raidersMatch[1], 10);
-      rem = rem.replace(/(?:raiders|squad|members|participants):\s*(\d{1,4})/i, '').trim();
-    }
-
-    const twoNumbersMatch = rem.match(/^(\d{1,3})\s+(\d{1,4})$/);
-    const oneNumberMatch = rem.match(/^(\d{1,3})$/);
-
-    if (twoNumbersMatch) {
-      inputLimit = parseInt(twoNumbersMatch[1], 10);
-      if (!customRaiders) customRaiders = parseInt(twoNumbersMatch[2], 10);
-    } else if (oneNumberMatch) {
-      inputLimit = parseInt(oneNumberMatch[1], 10);
+    const numberMatch = rem.match(/^(\d{1,3})/);
+    if (numberMatch) {
+      inputLimit = parseInt(numberMatch[1], 10);
+      rem = rem.replace(/^(\d{1,3})/, '').trim();
+      if (rem && !customFocus) {
+        customFocus = rem;
+      }
     } else if (rem && !customFocus) {
       customFocus = rem;
     }
@@ -635,16 +649,15 @@ bot.command('raid', requireGroupAdmin, async (ctx) => {
       `**Method 1:** Send with URL:\n` +
       `\`/raid https://x.com/username/status/1890000000000000000\`\n\n` +
       `**Method 2:** Reply to any message containing an X link with \`/raid\`!\n\n` +
-      `**Optional custom count:** \`/raid <url> 15\` (defaults to top 20 highest engagement)\n` +
-      `**Optional squad size:** \`/raid <url> raiders: 64\` (splits squad across comments)\n` +
+      `**Optional custom count:** \`/raid <url> 10\` (defaults to top 20 highest engagement)\n` +
       `**Optional custom focus:** \`/raid <url> focus: challenge them on gas fees\`\n` +
-      `**Combined:** \`/raid <url> 20 raiders: 64 focus: ask when mainnet drops\``,
+      `**Combined:** \`/raid <url> 10 focus: ask when mainnet drops\``,
       { parse_mode: 'Markdown' }
     );
     return;
   }
 
-  await handleRaidExecution(ctx, inputUrl, inputLimit, customFocus, customRaiders);
+  await handleRaidExecution(ctx, inputUrl, inputLimit, customFocus);
 });
 
 /**
@@ -681,10 +694,20 @@ async function registerBotCommands() {
       { command: 'addmembers', description: 'Bulk add member handles (@user1 @user2)' },
       { command: 'raiders', description: 'View active raiders in group' },
       { command: 'status', description: 'View bot operational metrics & settings' },
+      { command: 'id', description: 'Check your Telegram ID & Super Admin status' },
       { command: 'help', description: 'Show raid instructions & guide' }
     ], { scope: { type: 'all_chat_administrators' } });
 
-    console.log(`[Bot] Registered Telegram command menu for admins and members.`);
+    // Private Chat menu (visible in direct messages to the bot)
+    await bot.api.setMyCommands([
+      { command: 'raid', description: 'Launch raid on X post or comment' },
+      { command: 'angles', description: 'Preview lively suggested reply vibes' },
+      { command: 'status', description: 'View bot operational metrics & settings' },
+      { command: 'id', description: 'Check your Telegram ID & Super Admin status' },
+      { command: 'help', description: 'Show raid instructions & guide' }
+    ], { scope: { type: 'all_private_chats' } });
+
+    console.log(`[Bot] Registered Telegram command menu for admins, private chats, and members.`);
   } catch (err) {
     console.warn(`[Bot] Notice: Could not register Telegram UI commands:`, err.message);
   }

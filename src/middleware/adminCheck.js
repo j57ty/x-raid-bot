@@ -1,26 +1,55 @@
 const config = require('../config');
 
 /**
+ * Checks whether the user is a designated Super Admin.
+ * Matches against numeric Telegram user ID or Telegram username (case-insensitive).
+ *
+ * @param {Object} user - Telegram User object (from ctx.from)
+ * @returns {boolean}
+ */
+function isSuperAdmin(user) {
+  if (!user) return false;
+  const userId = String(user.id || '');
+  const username = user.username ? String(user.username).toLowerCase().replace(/^@/, '') : '';
+  const superAdmins = Array.isArray(config.SUPER_ADMINS) ? config.SUPER_ADMINS : [];
+
+  return (
+    (userId && superAdmins.includes(userId)) ||
+    (username && superAdmins.includes(username))
+  );
+}
+
+/**
  * Checks whether the user sending the update is an administrator or creator in the chat.
- * For private chats, checks ALLOWED_PRIVATE_USERS if configured.
+ * Super Admins are granted universal access across all chats (private and groups).
+ * In private chats, only Super Admins (and ALLOWED_PRIVATE_USERS if configured) are permitted.
  */
 async function isUserAdmin(ctx) {
   const chatType = ctx.chat?.type;
-  const userId = ctx.from?.id;
+  const user = ctx.from;
+  const userId = user?.id;
 
   if (!userId) {
     return false;
   }
 
-  // Handle Private (Direct Message) Chats
-  if (chatType === 'private') {
-    if (config.ALLOWED_PRIVATE_USERS && config.ALLOWED_PRIVATE_USERS.length > 0) {
-      return config.ALLOWED_PRIVATE_USERS.includes(String(userId));
-    }
+  // 1. Super Admin universal access override
+  if (isSuperAdmin(user)) {
     return true;
   }
 
-  // Handle Group / Supergroup Chats
+  // 2. Handle Private (Direct Message) Chats
+  if (chatType === 'private') {
+    if (config.ALLOWED_PRIVATE_USERS && config.ALLOWED_PRIVATE_USERS.length > 0) {
+      const username = user.username ? String(user.username).toLowerCase().replace(/^@/, '') : '';
+      return config.ALLOWED_PRIVATE_USERS.includes(String(userId)) || 
+             (username && config.ALLOWED_PRIVATE_USERS.includes(username));
+    }
+    // Only Super Admins can use bot in private chat by default
+    return false;
+  }
+
+  // 3. Handle Group / Supergroup Chats
   if (chatType === 'group' || chatType === 'supergroup') {
     try {
       const member = await ctx.getChatMember(userId);
@@ -31,7 +60,7 @@ async function isUserAdmin(ctx) {
     }
   }
 
-  return true;
+  return false;
 }
 
 /**
@@ -174,14 +203,17 @@ async function requireGroupAdmin(ctx, next) {
     } catch (e) {}
   }
 
+  const isPrivate = ctx.chat?.type === 'private';
+  const roleReq = isPrivate ? 'Super Admins can use this bot in private chat' : 'group administrators can use this bot';
   const username = ctx.from?.username ? `@${ctx.from.username}` : (ctx.from?.first_name || 'User');
   try {
     const warning = await ctx.reply(
-      `⛔ <b>Admin Only:</b> ${username}, only group administrators can use this bot.`,
+      `⛔ <b>Admin Only:</b> ${username}, only ${roleReq}.` +
+      (isPrivate ? `\n\n💡 Use <code>/id</code> to check your Telegram User ID & Super Admin status.` : ''),
       { parse_mode: 'HTML' }
     );
 
-    const deleteAfter = config.DELETE_WARNING_AFTER_SECONDS || 5;
+    const deleteAfter = isPrivate ? 0 : (config.DELETE_WARNING_AFTER_SECONDS || 5);
     if (deleteAfter > 0) {
       setTimeout(async () => {
         try {
@@ -195,6 +227,7 @@ async function requireGroupAdmin(ctx, next) {
 }
 
 module.exports = {
+  isSuperAdmin,
   isUserAdmin,
   isMessageDirectedAtBot,
   enforceAdminOnlyMiddleware,
