@@ -141,14 +141,14 @@ function pickTopEngagementComments(comments, limit = config.TOP_COMMENTS_LIMIT |
 
   const selected = sorted.slice(0, targetLimit);
 
-  // Assign raider distribution figures in randomized order per raid
+  // Assign raider distribution figures from highest to lowest across selected comments
   const figuresPool = (options.figures && Array.isArray(options.figures) && options.figures.length > 0)
     ? options.figures
-    : (config.RAIDER_DISTRIBUTION_FIGURES || [18, 7, 13, 4, 24, 16, 9, 27, 20, 33, 11, 6, 30, 15, 2, 22, 10, 5, 17, 12, 26, 3, 23, 14, 8]);
+    : (config.RAIDER_DISTRIBUTION_FIGURES || [33, 30, 27, 26, 24, 23, 22, 20, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
 
-  const shuffledFigures = shuffleArray(figuresPool);
+  const sortedFigures = [...figuresPool].sort((a, b) => b - a);
   for (let i = 0; i < selected.length; i++) {
-    selected[i].assignedRaiders = shuffledFigures[i % shuffledFigures.length];
+    selected[i].assignedRaiders = sortedFigures[i % sortedFigures.length];
   }
 
   return {

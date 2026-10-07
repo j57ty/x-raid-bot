@@ -123,7 +123,7 @@ function formatRaidMessages({
     });
 
     if (index === totalBatches - 1) {
-      msg += `🔥 <b>Instructions:</b> Aim for the target number of replies beside each comment (+18, +7, etc.) and drop replies matching the vibe!`;
+      msg += `🔥 <b>Instructions:</b> Aim for the target number of replies beside each comment (+33, +30, etc.) and drop replies matching the vibe!`;
     }
 
     messages.push(msg.trim());

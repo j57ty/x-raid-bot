@@ -79,23 +79,24 @@ assert.strictEqual(sampleDefault.selectedComments[24].id, 'tweet_75');
 for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
   assert(sampleDefault.selectedComments[i].engagement >= sampleDefault.selectedComments[i + 1].engagement);
 }
-// Verify each comment was assigned a raider distribution figure from the preset pool
+// Verify each comment was assigned a raider distribution figure from highest to lowest
 const assignedFigures = sampleDefault.selectedComments.map(c => c.assignedRaiders);
 assert.strictEqual(assignedFigures.length, 25);
-for (const fig of assignedFigures) {
-  assert(config.RAIDER_DISTRIBUTION_FIGURES.includes(fig), `Assigned figure ${fig} must be in RAIDER_DISTRIBUTION_FIGURES`);
+assert.deepStrictEqual(assignedFigures, config.RAIDER_DISTRIBUTION_FIGURES, 'Figures must be assigned in exact descending order');
+assert.strictEqual(assignedFigures[0], 33, 'Highest engagement comment receives highest figure 33');
+assert.strictEqual(assignedFigures[24], 2, 'Lowest engagement comment receives lowest figure 2');
+for (let i = 0; i < assignedFigures.length - 1; i++) {
+  assert(assignedFigures[i] >= assignedFigures[i + 1], 'Assigned figures must be ordered highest to lowest');
 }
-// Verify all 25 figures are present
-const sortedAssigned = [...assignedFigures].sort((a, b) => a - b);
-const sortedPresets = [...config.RAIDER_DISTRIBUTION_FIGURES].sort((a, b) => a - b);
-assert.deepStrictEqual(sortedAssigned, sortedPresets, 'All 25 preset figures must be distributed across the 25 comments');
-console.log(`  ✅ Default 25 comments selected with 25 preset figures distributed in random order: [${assignedFigures.slice(0, 5).join(', ')}, ...]`);
+console.log(`  ✅ Default 25 comments assigned figures highest to lowest: [${assignedFigures.slice(0, 5).join(', ')}, ..., ${assignedFigures.slice(-3).join(', ')}]`);
 
 // Case B: Explicit limit (e.g. 10)
 const sample10 = pickTopEngagementComments(allTractionMock, 10);
 assert.strictEqual(sample10.selectedCount, 10);
 assert.strictEqual(sample10.selectedComments.length, 10);
-console.log(`  ✅ Explicit limit 10: selected top 10 comments`);
+const figures10 = sample10.selectedComments.map(c => c.assignedRaiders);
+assert.deepStrictEqual(figures10, config.RAIDER_DISTRIBUTION_FIGURES.slice(0, 10), 'Top 10 comments receive top 10 highest figures');
+console.log(`  ✅ Explicit limit 10: selected top 10 comments with top 10 figures: [${figures10.join(', ')}]`);
 
 // Case C: distributeRaiders unit tests
 const dist20 = distributeRaiders(64, 20);
