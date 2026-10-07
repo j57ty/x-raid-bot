@@ -19,10 +19,10 @@ module.exports = {
 
   // Bot Settings
   TOP_COMMENTS_LIMIT: parseInt(process.env.TOP_COMMENTS_LIMIT || '25', 10), // Default: 25 comments with highest engagement
-  // 25 preset raider distribution figures (ordered highest to lowest)
+  // 25 preset raider distribution figures (ordered highest to lowest, max 31, min 3, all unique)
   RAIDER_DISTRIBUTION_FIGURES: (process.env.RAIDER_DISTRIBUTION_FIGURES
     ? process.env.RAIDER_DISTRIBUTION_FIGURES.split(',').map(n => parseInt(n.trim(), 10)).filter(n => !isNaN(n))
-    : [33, 30, 27, 26, 24, 23, 22, 20, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]
+    : [31, 30, 27, 26, 25, 24, 23, 22, 20, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3]
   ).sort((a, b) => b - a),
   TOTAL_RAIDERS: parseInt(process.env.TOTAL_RAIDERS || '64', 10), // Default squad: 64 raiders participating in raid
   DEFAULT_SAMPLE_PERCENT: parseInt(process.env.DEFAULT_SAMPLE_PERCENT || '40', 10),

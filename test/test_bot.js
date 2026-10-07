@@ -83,12 +83,15 @@ for (let i = 0; i < sampleDefault.selectedComments.length - 1; i++) {
 const assignedFigures = sampleDefault.selectedComments.map(c => c.assignedRaiders);
 assert.strictEqual(assignedFigures.length, 25);
 assert.deepStrictEqual(assignedFigures, config.RAIDER_DISTRIBUTION_FIGURES, 'Figures must be assigned in exact descending order');
-assert.strictEqual(assignedFigures[0], 33, 'Highest engagement comment receives highest figure 33');
-assert.strictEqual(assignedFigures[24], 2, 'Lowest engagement comment receives lowest figure 2');
+assert.strictEqual(assignedFigures[0], 31, 'Highest engagement comment receives highest figure 31 (does not surpass 31)');
+assert.strictEqual(assignedFigures[24], 3, 'Lowest engagement comment receives lowest figure 3');
+assert.strictEqual(new Set(assignedFigures).size, 25, 'Each comment must have its own individual unique amount');
+assert(Math.max(...assignedFigures) <= 31, 'Figures must not surpass 31');
+assert(Math.min(...assignedFigures) >= 3, 'Figures must not drop below 3');
 for (let i = 0; i < assignedFigures.length - 1; i++) {
-  assert(assignedFigures[i] >= assignedFigures[i + 1], 'Assigned figures must be ordered highest to lowest');
+  assert(assignedFigures[i] > assignedFigures[i + 1], 'Assigned figures must be strictly decreasing without duplicate adjacent values');
 }
-console.log(`  ✅ Default 25 comments assigned figures highest to lowest: [${assignedFigures.slice(0, 5).join(', ')}, ..., ${assignedFigures.slice(-3).join(', ')}]`);
+console.log(`  ✅ Default 25 comments assigned unique figures (max 31, min 3, descending): [${assignedFigures.slice(0, 5).join(', ')}, ..., ${assignedFigures.slice(-3).join(', ')}]`);
 
 // Case B: Explicit limit (e.g. 10)
 const sample10 = pickTopEngagementComments(allTractionMock, 10);
